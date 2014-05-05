@@ -1,0 +1,6 @@
+[submodule "bin/assembly-testing"]
+	path = bin/assembly-testing
+	url = git@github.com:jgluck/assembly-testing.git
+[submodule "bin/assembly-testing-doc"]
+	path = bin/assembly-testing-doc
+	url = https://github.com/JasonFil/assembly-testing.git

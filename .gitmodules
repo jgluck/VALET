@@ -4,3 +4,9 @@
 [submodule "bin/assembly-testing-doc"]
 	path = bin/assembly-testing-doc
 	url = https://github.com/JasonFil/assembly-testing.git
+[submodule "bin/sickle"]
+	path = bin/sickle
+	url = https://github.com/najoshi/sickle.git
+[submodule "bin/depth-cover"]
+	path = bin/depth-cover
+	url = https://github.com/jalvz/depth-cover.git

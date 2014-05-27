@@ -118,12 +118,8 @@ def main():
 
     reapr_output_dir = "data/output/reapr"
     reapr_perfect_prefix = "data/output/r_perfect_prefix"
-    ##does not want this
-    #ensure_dir(reapr_output_dir)
-    #call([reapr_command,"perfectmap",fastaFile,reads_trimmed_location[0],reads_trimmed_location[1], "100", reapr_perfect_prefix])
     
     warning("About to run reapr pipeline")
-    #call_arr = [reapr_command,"pipeline",fastaFile,sorted_bam_location+".bam",reapr_output_dir, reapr_perfect_prefix]
     call_arr = [reapr_command,"pipeline",fastaFile,sorted_bam_location+".bam",reapr_output_dir]
     out_cmd(call_arr)
     call(call_arr)

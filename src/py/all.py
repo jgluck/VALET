@@ -59,13 +59,16 @@ def main():
         out_cmd(call_arr)
         call(call_arr)
 
-    outputProbsDir = "data/lap/"
+    outputProbsDir = "data/output/lap/"
     ensure_dir(outputProbsDir)
     outputProbsLocation = outputProbsDir + "output.prob"
     fp = open(outputProbsLocation, "w")
 
     ##lap
-    call(["bin/lap/aligner/calc_prob.py", "-a", fastaFile,  "-s", samOutputLocation,  "-q", "-i",  reads_trimmed_Location[0]], stdout=fp)
+    call_arr = ["bin/lap/aligner/calc_prob.py", "-a", fastaFile,  "-s", samOutputLocation,  "-q", "-i",  reads_trimmed_location[0]]
+    out_cmd(call_arr)
+    warning("That command outputs to: ", outputProbsLocation)
+    call(call_arr, stdout=fp)
     call(["bin/lap/aligner/sum_prob.py", "-i", outputProbsLocation])
 
 
@@ -106,7 +109,7 @@ def main():
     ensure_dir(coverage_file_dir)
     pileup_file = coverage_file_dir + "mpileup_output.out"
     p_fp = open(pileup_file, 'w')
-    call_arr = ["samtools", "mpileup", "-D", "-f", fastaFile, sorted_bam_location]
+    call_arr = ["samtools", "mpileup", "-f", fastaFile, sorted_bam_location]
     out_cmd(call_arr)
     warning("That command outputs to file: ", pileup_file)
     call(call_arr,stdout=p_fp)
@@ -130,15 +133,15 @@ def main():
 
 def get_options():
     parser = OptionParser()
-    parser.add_option("-a", "--assembly-fasta", dest="fasta_file", \ 
+    parser.add_option("-a", "--assembly-fasta", dest="fasta_file", \
             help="Candidate assembly file", metavar="FILE")
-    parser.add_option("-r1", "--reads-1", dest="read_file_1", \
+    parser.add_option("-r", "--reads-1", dest="read_file_1", \
             help="First Read File", metavar="FILE")
-    parser.add_option("-r2", "--reads-2", dest="read_file_2", \
+    parser.add_option("-d", "--reads-2", dest="read_file_2", \
             help="Second Read File", metavar="FILE")
-    parser.add_options("-c", "--coverage-file", dest="coverage_file", \
+    parser.add_option("-c", "--coverage-file", dest="coverage_file", \
             help="Assembly created per-contig coverage file")
-    parser.add_options("-e", "--email", dest="email", \
+    parser.add_option("-e", "--email", dest="email", \
             help="Email to notify when job completes")
 
     (options, args) = parser.parse_args()
@@ -148,10 +151,10 @@ def get_options():
         warning("You need to provide a fasta file with -a")
         should_err = True
     if not options.read_file_1:
-        warning("You need to provide the first read file with -r1")
+        warning("You need to provide the first read file with -r")
         should_err = True
     if not options.read_file_2:
-        warning("You need to provide the second read file with -r2")
+        warning("You need to provide the second read file with -d")
         should_err = True
     if not options.coverage_file:
         warning("You need to provide the coverage file with -c")
@@ -174,11 +177,15 @@ def ensure_dir(f):
 def notify_complete(target_email,t):
     call(['echo "Completed in %d" | mail -s "Job Completed" %s' % (t, target_email) ],shell=True)
 
+def line(x):
+    print ("-"*x)
+
 def out_cmd(*objs):
+    line(75)
     print("About to exec: ", *objs, file=sys.stderr)
 
 def warning(*objs):
-    print("WARNING: ",*objs, file=sys.stderr)
+    print("\tWARNING: ",*objs, file=sys.stderr)
 
 if __name__ == '__main__':
     main()

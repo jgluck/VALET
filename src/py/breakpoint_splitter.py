@@ -2,6 +2,7 @@
 from __future__ import print_function
 from optparse import OptionParser
 import os
+import sys
 
 class ReadsSplitter:
 
@@ -75,9 +76,9 @@ class ReadsSplitter:
             r_o_2.write(h2_2)
             r_o_2.write(read_quality_2)
 
-        close(r_o_1)
-        close(r_o_2)
-        close(read_file)
+        r_o_1.close()
+        r_o_2.close()
+        read_file.close()
 
 
 

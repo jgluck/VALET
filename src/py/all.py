@@ -50,7 +50,7 @@ def main():
         for readFile in reads_untrimmed_location:
             reads_trimmed_location.append(readFile) #Added for interim, until trimming actually works
         warning("About to run bowtie2")
-        call_arr = ["/cbcb/project-scratch/cmhill/tools/bowtie2-2.2.2/bowtie2", "-x", outputPrefix, "-1", reads_trimmed_location[0], "-2", reads_trimmed_location[1], "-S", samOutputLocation, "--un", singletonOutputLocation, "-q", "-I 100", "-X 500", "-p 8"]
+        call_arr = ["/cbcb/project-scratch/cmhill/tools/bowtie2-2.2.2/bowtie2", "-x", outputPrefix, "-1", reads_trimmed_location[0], "-2", reads_trimmed_location[1], "-S", samOutputLocation, "--un-conc", singletonOutputLocation, "-q", "-I 100", "-X 500", "-p 8"]
         out_cmd(call_arr)
         call(call_arr)
     elif should_align:
@@ -109,10 +109,10 @@ def main():
     ensure_dir(coverage_file_dir)
     pileup_file = coverage_file_dir + "mpileup_output.out"
     p_fp = open(pileup_file, 'w')
-    call_arr = ["samtools", "mpileup", "-f", fastaFile, sorted_bam_location]
+    call_arr = ["samtools", "mpileup", "-f", fastaFile, sorted_bam_location+".bam"]
     out_cmd(call_arr)
-    warning("That command outputs to file: ", pileup_file)
     call(call_arr,stdout=p_fp)
+    warning("That command outputs to file: ", pileup_file)
 
     abundance_file = options.coverage_file #"data/input/pairs/soap.abundance.cvg"
     call_arr = ["src/py/depth_of_coverage.py", "-a", abundance_file, "-m", pileup_file]

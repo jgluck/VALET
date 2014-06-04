@@ -12,7 +12,7 @@ class BreakpointFinder:
         self.options = None
         self.assembly_file = None
         self.singleton_halves = []
-        self.lengths = {}
+        self.read_lengths = {}
         self.set_locations()
         self.getOptions()
 
@@ -67,22 +67,35 @@ class BreakpointFinder:
             else:
                 warning("Skipping potential read file: " + file_name)
 
-    def read_lengths(self):
+    def read_in_lengths(self):
+        log_file = open(self.breakpoint_dir + "log.log", 'w')
         for file_name in os.listdir(self.conc_dir):
+            print("Checking name %s\n" %(file_name))
             if '.reads' in file_name:
+                print("Reading file: %s\n" %(file_name))
                 with open(self.conc_dir + file_name, 'r') as reads_file:
-                    for read in read_read(reads_file):
-                        print(read)
+                    for (read,length) in self.read_read(reads_file):
+                        #print ("Read: %s Length: %s" %(read,length))
+                        self.read_lengths[read] = length
  
     def read_read(self, fp):
-        while True:
+        run_flag = True
+        while run_flag:
             line_bundle = []
             for i in range(4):
                 line_bundle.append(fp.readline())
-            if len(line_bundle) == 0:
-                break
-            yield line_bundle
+            if line_bundle[0] == '':
+                run_flag = False
+            else:
+                read = line_bundle[0][1:]
+                length = len(line_bundle[1].strip())
+                yield (read,length)
 
+    '''
+    Outputs breakpoints to file self.breakpoint_file
+    Position Sequence Name Flag Length
+    Tab sep
+    '''
     def detect_breakpoints(self):
         with open(self.breakpoint_file, 'w') as out_file:
             for file_name in os.listdir(self.sam_output_dir):
@@ -92,12 +105,13 @@ class BreakpointFinder:
                             if line[0] != '@':
                                 line_components = line.split('\t')
                                 if line_components[3] != '0':
-                                    out_file.write("%s\t%s\t%s\n" % (line_components[3],\
-                                            line_components[0], line_components[1]))
+                                    out_file.write("%s\t%s\t%s\t%d\n" % (line_components[3],\
+                                            line_components[0], line_components[1],\
+                                            len(line_components[9])))
 
     def go(self):
-        self.run_bowtie_index()
-        self.run_bowtie_2()
+        #self.run_bowtie_index()
+        #self.run_bowtie_2()
         self.detect_breakpoints()
 
     def getOptions(self):

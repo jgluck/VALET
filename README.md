@@ -1,5 +1,6 @@
 #MetValidate
 
-This repo is pretty vacant 
+Pipeline for evaulating metagenomic assemblies.
 
--Jon
+Once the repository has been cloned, to install the required tools run the command:
+```./setup.sh```

@@ -32,6 +32,7 @@ class BreakpointFinder:
 
         self.singleton_dir = self.breakpoint_dir + "singleton/"
         self.singleton_loc = self.singleton_dir + "singletons.csv"
+
         ensure_dir(self.singleton_dir)
 
         self.conc_dir = self.breakpoint_dir + "concordance/"
@@ -39,17 +40,12 @@ class BreakpointFinder:
         ensure_dir(self.conc_dir)
 
         self.breakpoint_file = self.breakpoint_dir + "breakpoints.csv"
+        self.sorted_breakpoint_file = self.breakpoint_dir + "sorted_breakpoints.csv"
+        self.binned_breakpoint_file = self.breakpoint_dir + "binned_breakpoints.csv"
+        self.collapsed_breakpoint_file = self.breakpoint_dir + "collapsed_breakpoints.csv"
 
     def run_bowtie_index(self):
         call_arr = [self.bowtie_build_loc, self.assembly_file, self.index_prefix]
-        out_cmd(call_arr)
-        call(call_arr)
-
-    def run_bowtie_2_archived(self): #For mate pairs, not what we wanted
-        call_arr = [self.bowtie_loc, "-x", self.index_prefix, "-1", \
-                self.singleton_halves[0], "-2", self.singleton_halves[1],\
-                "-S", self.sam_output_location, "--un-conc", self.singleton_loc,\
-                "--al-conc", self.conc_loc, "-q", "-I 50", "-X", "1500", "-p 10"]
         out_cmd(call_arr)
         call(call_arr)
 
@@ -67,6 +63,68 @@ class BreakpointFinder:
             else:
                 warning("Skipping potential read file: " + file_name)
 
+    def sort_breakpoints(self):
+        call_arr = ["sort", "-t\t", '-k 1n,1', '-k 2n,2', '-k 5n,5', self.breakpoint_file]
+        out_cmd(call_arr)
+        out_file = open(self.sorted_breakpoint_file, 'w')
+        warning("This call outputs to file: ", self.sorted_breakpoint_file)
+        call(call_arr, stdout=out_file)
+
+    def bin_breakpoints(self):
+        with open(self.sorted_breakpoint_file,'r') as breakpoints,\
+                open(self.binned_breakpoint_file,'w') as out_file:
+            for contig_bundle in self.read_contig(breakpoints):
+                self.w_s = 1
+                self.w_e = self.w_s + self.bin_size
+                for match in contig_bundle:
+                    warning("Examining Current Match: ", match)
+                    match_split = match.split('\t')
+                    match_start = int(match_split[1])
+                    match_end = int(match_split[4]) + match_start
+                    warning([match_start,match_end,self.w_s,self.w_e])
+                    if match_start == 0:
+                        continue
+                    if match_start >= self.w_s and match_start <= self.w_e:
+                        out_file.write(match.strip()+('\t%s\n'%(self.w_s)))
+                    else:
+                        warning("Attempting to deal with %d" %(match_start))
+                        while match_start < self.w_s or match_start > self.w_e:
+                            self.w_s = self.w_e
+                            self.w_e = self.w_s + self.bin_size
+                        out_file.write(match.strip()+('\t%s\n'%(self.w_s)))
+    
+    def collapse_bins(self):
+        call_str = "awk '{printf \"%%s\\t%%s\\n\",$1,$6}' %s | sort | uniq -c | tee %s" %(self.binned_breakpoint_file, self.collapsed_breakpoint_file)
+        out_cmd(call_str)
+        call(call_str,shell=True)
+
+    def read_contig(self, fp):
+        log_file = open(self.breakpoint_dir + "read_contig_log.log", 'w')
+        run_flag = True
+        contig_bundle = []
+        line_buffer = ""
+        while run_flag:
+            current_contig = ""
+            if line_buffer != "":
+                current_contig = line_buffer.split('\t')[0]
+                contig_bundle.append(line_buffer)
+                line_buffer = ""
+            while True:
+                line = fp.readline()
+                print("Read in line: %s" %(line), file=log_file)
+                if line == '':
+                    run_flag = False
+                    break
+                elif line.split('\t')[0] != current_contig:
+                    line_buffer = line
+                    break
+                else:
+                    contig_bundle.append(line)
+            ret_bundle = contig_bundle
+            contig_bundle = []
+            print("About to yield", ret_bundle, file=log_file)
+            yield ret_bundle
+ 
     def read_in_lengths(self):
         log_file = open(self.breakpoint_dir + "log.log", 'w')
         for file_name in os.listdir(self.conc_dir):
@@ -77,7 +135,7 @@ class BreakpointFinder:
                     for (read,length) in self.read_read(reads_file):
                         #print ("Read: %s Length: %s" %(read,length))
                         self.read_lengths[read] = length
- 
+    
     def read_read(self, fp):
         run_flag = True
         while run_flag:
@@ -105,28 +163,35 @@ class BreakpointFinder:
                             if line[0] != '@':
                                 line_components = line.split('\t')
                                 if line_components[3] != '0':
-                                    out_file.write("%s\t%s\t%s\t%d\n" % (line_components[3],\
+                                    out_file.write("%s\t%s\t%s\t%s\t%d\n" % (line_components[2],\
+                                            line_components[3],\
                                             line_components[0], line_components[1],\
                                             len(line_components[9])))
 
     def go(self):
         #self.run_bowtie_index()
         #self.run_bowtie_2()
-        self.detect_breakpoints()
-
+        #self.detect_breakpoints()
+        #self.sort_breakpoints()
+        #self.bin_breakpoints()
+        self.collapse_bins()
     def getOptions(self):
         parser = OptionParser()
         parser.add_option("-a", "--assembly-file", dest="assembly_file",\
                 help="Assembly File to search", metavar="FILE")
         parser.add_option("-r", "--reads-dir", dest="reads", \
                 help="Directory of Reads", metavar="PATH")
-        #parser.add_option("-l", "--reads-2", dest="reads_two", \
-        #        help="Second read file to split", metavar="FILE")
+        parser.add_option("-b", "--bin-size", dest="bin_size", \
+                help="Bin size", metavar="SIZE")
 
         (options, args) = parser.parse_args()
         self.options = options
         if options.reads:
             self.reads_dir = options.reads
+        if options.bin_size:
+            self.bin_size = options.bin_size
+        else:
+            self.bin_size = 500
         #if options.reads_two:
         #    self.singleton_halves.append(options.reads_two)
         if not options.assembly_file:

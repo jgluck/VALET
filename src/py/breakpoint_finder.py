@@ -4,7 +4,7 @@ from optparse import OptionParser
 from subprocess import call
 import os
 import sys
-
+import math
 
 class BreakpointFinder:
 
@@ -42,7 +42,9 @@ class BreakpointFinder:
         self.breakpoint_file = self.breakpoint_dir + "breakpoints.csv"
         self.sorted_breakpoint_file = self.breakpoint_dir + "sorted_breakpoints.csv"
         self.binned_breakpoint_file = self.breakpoint_dir + "binned_breakpoints.csv"
-        self.collapsed_breakpoint_file = self.breakpoint_dir + "collapsed_breakpoints.csv"
+        self.collapsed_breakpoint_file = self.breakpoint_dir\
+                + "collapsed_breakpoints.csv"
+        self.bins_of_interest_file = self.breakpoint_dir + "interesting_bins.csv"
 
     def run_bowtie_index(self):
         call_arr = [self.bowtie_build_loc, self.assembly_file, self.index_prefix]
@@ -77,29 +79,51 @@ class BreakpointFinder:
                 self.w_s = 1
                 self.w_e = self.w_s + self.bin_size
                 for match in contig_bundle:
-                    warning("Examining Current Match: ", match)
                     match_split = match.split('\t')
                     match_start = int(match_split[1])
                     match_end = int(match_split[4]) + match_start
-                    warning([match_start,match_end,self.w_s,self.w_e])
                     if match_start == 0:
                         continue
                     if match_start >= self.w_s and match_start <= self.w_e:
                         out_file.write(match.strip()+('\t%s\n'%(self.w_s)))
                     else:
-                        warning("Attempting to deal with %d" %(match_start))
                         while match_start < self.w_s or match_start > self.w_e:
                             self.w_s = self.w_e
                             self.w_e = self.w_s + self.bin_size
                         out_file.write(match.strip()+('\t%s\n'%(self.w_s)))
-    
+
     def collapse_bins(self):
         call_str = "awk '{printf \"%%s\\t%%s\\n\",$1,$6}' %s | sort | uniq -c | tee %s" %(self.binned_breakpoint_file, self.collapsed_breakpoint_file)
         out_cmd(call_str)
         call(call_str,shell=True)
 
+    def trim_bins(self):
+        avg_bin_size = 0
+        num_bins = 0
+        summed_var = 0
+        std_dev = 0
+        with open(self.collapsed_breakpoint_file,'r') as pass_1:
+            for line in pass_1:
+                avg_bin_size += int(line.split()[0])
+                num_bins += 1
+            avg_bin_size = float(avg_bin_size)/num_bins
+        with open(self.collapsed_breakpoint_file,'r') as pass_2:
+            for line in pass_2:
+                summed_var += (float(line.split()[0]) - avg_bin_size)**2
+            summed_var = summed_var / num_bins
+            std_dev = math.sqrt(summed_var)
+        with open(self.collapsed_breakpoint_file,'r') as pass_3,\
+                open(self.bins_of_interest_file,'w') as out_file:
+                    cutoff = 3 * std_dev
+                    out_file.write("Average Bin Size is: %f\nStd_dev is: %f\n"\
+                            % (avg_bin_size,std_dev))
+                    for line in pass_3:
+                        if (float(line.split()[0]) - avg_bin_size) > cutoff:
+                            out_file.write(line)
+
+
+
     def read_contig(self, fp):
-        log_file = open(self.breakpoint_dir + "read_contig_log.log", 'w')
         run_flag = True
         contig_bundle = []
         line_buffer = ""
@@ -111,7 +135,6 @@ class BreakpointFinder:
                 line_buffer = ""
             while True:
                 line = fp.readline()
-                print("Read in line: %s" %(line), file=log_file)
                 if line == '':
                     run_flag = False
                     break
@@ -122,7 +145,6 @@ class BreakpointFinder:
                     contig_bundle.append(line)
             ret_bundle = contig_bundle
             contig_bundle = []
-            print("About to yield", ret_bundle, file=log_file)
             yield ret_bundle
  
     def read_in_lengths(self):
@@ -169,12 +191,14 @@ class BreakpointFinder:
                                             len(line_components[9])))
 
     def go(self):
-        #self.run_bowtie_index()
-        #self.run_bowtie_2()
-        #self.detect_breakpoints()
-        #self.sort_breakpoints()
-        #self.bin_breakpoints()
+        self.run_bowtie_index()
+        self.run_bowtie_2()
+        self.detect_breakpoints()
+        self.sort_breakpoints()
+        self.bin_breakpoints()
         self.collapse_bins()
+        self.trim_bins()
+    
     def getOptions(self):
         parser = OptionParser()
         parser.add_option("-a", "--assembly-file", dest="assembly_file",\

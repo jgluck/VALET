@@ -21,10 +21,7 @@ class bcolors:
     ENDC = '\033[0m'
 
 def main():
-    #Future echo implementation
-    #command_echo_file = open(options.output_dir + "/commands.sh",'w')
-    #command_echo_file.write("#!/bin/bash")
-    
+   
     (options, args) = get_options()
 
     start_time = time.time()
@@ -48,7 +45,7 @@ def main():
     ensure_dir(singleton_output_dir)
 
     step("ALIGNING READS")
-    run_bowtie2(options, sam_output_location)
+    unaligned_dir = run_bowtie2(options, sam_output_location)
 
     step("CALCULATING ASSEMBLY PROBABILITY")
     run_lap(options, sam_output_location, reads_trimmed_location)
@@ -57,6 +54,9 @@ def main():
     ouputBreakpointLocation = outputBreakpointDir + "errorsDetected.csv"
     ensure_dir(outputBreakpointDir)
 
+
+    step("BREAKPOINT")
+    run_breakpoint_finder(options, unaligned_dir, outputBreakpointDir)
     ##breakpoint --- takes too long with current implementation
     ##alpha is length that must match
     #call(["bin/assembly-testing/breakpoint-detection/breakpoint_indices.py", "-a", fasta_file, "-u", singleton_output_location, "-o", ouputBreakpointLocation ,  "--alpha", "20","--algorithm","naive"])
@@ -213,6 +213,10 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
     build_bowtie2_index(os.path.abspath(index_path), os.path.abspath(options.fasta_file))
     assembly_index = os.path.abspath(index_path)
 
+    unaligned_dir = os.path.abspath(options.output_dir)+'/unaligned_reads/'
+    ensure_dir(unaligned_dir)
+    unaligned_file = unaligned_dir +  'unaligned.reads'
+
     #input_sam_file = output_sam_file
     read_type = " -f "
     if options.fastq_file:
@@ -220,12 +224,17 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
     
     bowtie2_args = ""
     if options.first_mates:
-        bowtie2_args = "-a -x " + assembly_index + " -1 " + options.first_mates + " -2 " + options.second_mates + \
-                " -p " + options.threads + " --very-sensitive -a " + " --reorder --" + options.orientation + " -I " + options.min_insert_size + \
-                " -X " + options.max_insert_size
+        bowtie2_args = "-a -x " + assembly_index + " -1 " + options.first_mates\
+                + " -2 " + options.second_mates + " -p " + options.threads\
+                + " --very-sensitive -a " + " --reorder --"\
+                + options.orientation + " -I " + options.min_insert_size\
+                + " -X " + options.max_insert_size + ' --un-conc '\
+                + unaligned_file
     else:
-        bowtie2_args = "-a -x " + assembly_index + read_type + " -U " + options.reads_filenames + \
-                " --very-sensitive -a " + " --reorder -p " + options.threads
+        bowtie2_args = "-a -x " + assembly_index + read_type + " -U "\
+                + options.reads_filenames + " --very-sensitive -a "\
+                + " --reorder -p " + options.threads + ' --un '\
+                + unaligned_file
 
     if not options:
         sys.stderr.write("[ERROR] No Bowtie2 options specified" + '\n')
@@ -241,6 +250,33 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
     bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE,
             stderr=ignore)
     bowtie_output, err = bowtie_proc.communicate()
+    
+    return unaligned_dir
+
+
+def run_breakpoint_finder(options,unaligned,breakpoint_dir):
+    '''
+    attempts to find breakpoints
+    '''
+    call_arr = ['src/py/breakpoint_splitter.py',\
+            '-u', unaligned,\
+            '-o', breakpoint_dir + 'split_reads/']
+
+    out_cmd(call_arr)
+    call(call_arr)
+    
+    std_err_file = open(breakpoint_dir + 'std_err.log','w')
+    call_arr = ['src/py/breakpoint_finder.py',\
+            '-a', options.fasta_file,\
+            '-r', breakpoint_dir + 'split_reads/',\
+            '-b 500', '-o', breakpoint_dir]
+    out_cmd(call_arr)
+    call(call_arr,stderr=std_err_file)
+    results(breakpoint_dir + 'interesting_bins.csv')
+
+    '''
+    read_files now split
+    '''
 
 
 def run_lap(options, sam_output_location, reads_trimmed_location):
@@ -313,6 +349,8 @@ def run_depth_of_coverage(options, pileup_file):
     results(dp_fp)
 
     return dp_fp
+
+    
 
 
 def run_reapr(options, sorted_bam_location):

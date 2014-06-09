@@ -13,14 +13,14 @@ class BreakpointFinder:
         self.assembly_file = None
         self.singleton_halves = []
         self.read_lengths = {}
-        self.set_locations()
         self.getOptions()
-
+        self.set_locations()
+    
     def set_locations(self):
         self.bowtie_dir = "/cbcb/project-scratch/cmhill/tools/bowtie2-2.2.2/"
         self.bowtie_loc = self.bowtie_dir + "bowtie2"
         self.bowtie_build_loc = self.bowtie_dir + "bowtie2-build"
-        self.breakpoint_dir = "data/output/breakpoint/"
+        self.breakpoint_dir = self.options.output_dir
 
         self.bowtie_index =  self.breakpoint_dir + "bowtie-index/"
         self.index_prefix = self.bowtie_index+ "breakpoint"
@@ -48,19 +48,19 @@ class BreakpointFinder:
 
     def run_bowtie_index(self):
         call_arr = [self.bowtie_build_loc, self.assembly_file, self.index_prefix]
-        out_cmd(call_arr)
+        #out_cmd(call_arr)
         call(call_arr)
 
     def run_bowtie_2(self):
         for file_name in os.listdir(self.reads_dir):
-            if "csv" in file_name:
+            if "reads" in file_name:
                 call_arr = [self.bowtie_loc, '-x', self.index_prefix, '-U',\
                          self.reads_dir + file_name,\
                          '-S', self.sam_output_dir + file_name + '.sam',\
                          '--un', self.singleton_dir + file_name + '.singletons',\
                          '--al', self.conc_dir + file_name + '.reads',
                          '-q', '-I 50', '-X 800', '-p 10']
-                out_cmd(call_arr)
+                #out_cmd(call_arr)
                 call(call_arr)
             else:
                 warning("Skipping potential read file: " + file_name)
@@ -206,7 +206,10 @@ class BreakpointFinder:
         parser.add_option("-r", "--reads-dir", dest="reads", \
                 help="Directory of Reads", metavar="PATH")
         parser.add_option("-b", "--bin-size", dest="bin_size", \
-                help="Bin size", metavar="SIZE")
+                help="Bin size", metavar="SIZE", type="int")
+        parser.add_option("-o", "--output", dest="output_dir", \
+                help="Output directory", metavar="DIR",\
+                default="data/output/breakpoint/")
 
         (options, args) = parser.parse_args()
         self.options = options

@@ -18,24 +18,25 @@ class ReadsSplitter:
 
     def getOptions(self):
         parser = OptionParser()
-        parser.add_option("-r", "--reads-1", dest="reads_one", \
-                help="First read file to split", metavar="FILE")
-        parser.add_option("-l", "--reads-2", dest="reads_two", \
-                help="Second read file to split", metavar="FILE")
+        parser.add_option("-u", "--unaligned", dest="unaligned_dir", \
+                help="Unaligned read directory", metavar="DIR")
+        parser.add_option("-o", "--output", dest="output_dir",\
+                help="Directory for output", metavar="DIR",\
+                default="data/output/breakpoints/reads")
 
         (options, args) = parser.parse_args()
         self.options = options
-        if options.reads_one:
-            self.files_to_split.append(options.reads_one)
-        if options.reads_two:
-            self.files_to_split.append(options.reads_two)
-
+        if options.unaligned_dir:
+            for file_name in os.listdir(options.unaligned_dir):
+                if 'unaligned' in file_name:
+                    self.files_to_split.append(options.unaligned_dir + file_name)
+                
     def splitFile(self, fn):
         if not os.path.isfile(fn):
             warning("%s DOES NOT EXIST" %(fn))
             exit(1)
 
-        read_split_output_dir = "data/output/breakpoint/reads/"
+        read_split_output_dir = self.options.output_dir
         ensure_dir(read_split_output_dir)
 
         read_split_output_1 = read_split_output_dir + os.path.split(fn)[1] + ".1" 
@@ -99,7 +100,7 @@ def ensure_dir(f):
         os.makedirs(d)
 
 def warning(*objs):
-    print("\tWARNING: ",*objs, file=sys.stderr)
+    print("\tINFO: ",*objs, file=sys.stderr)
 
 def main():
     '''

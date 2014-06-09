@@ -7,13 +7,16 @@ import os
 import time
 import sys
 
+PROG_NAME = "DEPTH_COV"
+
 def setup_options():
     parser = OptionParser()
     parser.add_option("-a", "--abundance-file", dest="abundance_file", help="Assembler provided abundance file", metavar="FILE")
     parser.add_option("-m", "--mpileup-file", dest="mp_file_loc", help="mpileup output file", metavar="FILE")
     parser.add_option("-o", "--output", dest="output_location", help="output location for depth of coverage tool", default="data/output/coverage/bad_bases.csv", metavar="FILE")
     parser.add_option("-w", "--window-size", dest="window_size", help="window size to sweep over base pairs", type="int", default = 1)
- 
+    parser.add_option("-g", "--gff", dest="gff_format", default=False, action='store_true')
+
     (options,args) = parser.parse_args()
 
     should_quit = False
@@ -54,13 +57,14 @@ def main():
     
     with open(bad_cvg_file, 'w') as fp:
         for grouping in read_mpileup(mpile_file, window_size):
-            check_grouping(grouping, abundance_dict, fp, 3)
+            check_grouping(grouping, abundance_dict, fp, 3, options.gff_format)
 
 
 def in_range(num, low, high):
     return num >= low and num <= high
 
-def check_grouping(grouping, a_dict, fp, n_devs):
+def check_grouping(grouping, a_dict, fp, n_devs, gff_format):
+    #print(grouping)
     cvg = 0.0
     window_start = int(grouping[0][1])
     window_end = int(grouping[-1][1])
@@ -76,8 +80,18 @@ def check_grouping(grouping, a_dict, fp, n_devs):
     low = avg_contig_cvg - (std_dev * n_devs)
     high = avg_contig_cvg + (std_dev * n_devs)
     if not in_range(a_cvg, low , high) :
-        fp.write("%d, %d, %d, %f, %f, %f\n" %(int(grouping[0][0]), window_start, \
-            window_end, a_cvg, low, high))
+        if gff_format:
+            cov_type = "Low_coverage"
+            if a_cvg > high:
+                cov_type = "High_coverage"
+            fp.write("%s\t%s\t%s\t%d\t%d\t%f\t.\t.\tlow=%f;high=%f\n" %(str(grouping[0][0]), PROG_NAME, \
+                cov_type, window_start, window_end, a_cvg, low, high))
+            
+        else:
+            fp.write("%s,%d,%d,%f,%f,%f\n" %(str(grouping[0][0]), window_start, \
+                window_end, a_cvg, low, high))
+
+        
 
 def read_abundances(fp, a_dict):
     fp = open(fp,'r')

@@ -6,6 +6,7 @@ from tempfile import mkstemp
 import os
 import random
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -29,9 +30,6 @@ def main():
 
     error_files = []
     
-    #reads_untrimmed_location = ["data/input/pairs/SRS011061.denovo_duplicates_marked\
-    #        .trimmed.1.fastq","data/input/pairs/SRS011061.denovo_duplicates_marked.\
-    #        trimmed.2.fastq"]
     reads_untrimmed_location = [options.first_mates, options.second_mates]
     reads_trimmed_location = []
     
@@ -43,10 +41,36 @@ def main():
 
     ensure_dir(sam_output_location_dir)
     ensure_dir(singleton_output_dir)
+    
+    bins_dir = options.output_dir + "/bins/"
+    ensure_dir(bins_dir)
 
-    step("ALIGNING READS")
-    unaligned_dir = run_bowtie2(options, sam_output_location)
+    bin_coverage(options,bins_dir)
+    
+    input_fasta_saved = options.fasta_file
+    output_dir_saved = options.output_dir
 
+    for bin_dir in os.listdir(bins_dir):
+        if 'bin' in bin_dir:
+            
+            options.fasta_file = os.path.abspath(output_dir_saved) + '/bins/'\
+                    + bin_dir + '/' + os.path.basename(input_fasta_saved)
+
+            options.output_dir = os.path.abspath(output_dir_saved) + '/bins/'\
+                    + bin_dir + '/'
+
+            bin_dir_infix = '/bins/' + bin_dir + '/'
+            bin_dir = os.path.abspath(options.output_dir) + '/bins/' + bin_dir + '/'
+            warning("Bin dir is: %s" % bin_dir)
+            sam_output_location_dir = bin_dir + 'sam/'
+            sam_output_location = sam_output_location_dir + 'library.sam'
+            ensure_dir(sam_output_location_dir)
+            
+            
+            step("ALIGNING READS")
+            unaligned_dir = run_bowtie2(options, sam_output_location, bin_dir_infix)
+
+    exit()
     step("CALCULATING ASSEMBLY PROBABILITY")
     run_lap(options, sam_output_location, reads_trimmed_location)
 
@@ -194,7 +218,7 @@ def build_bowtie2_index(index_name, reads_file):
     return index_name
 
 
-def run_bowtie2(options = None, output_sam = 'temp.sam'):
+def run_bowtie2(options = None, output_sam = 'temp.sam', bin_dir = ""):
     """
     Run Bowtie2 with the given options and save the SAM file.
     """
@@ -202,20 +226,26 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
     # Using bowtie2.
     # Create the bowtie2 index if it wasn't given as input.
     #if not assembly_index:
-    if not os.path.exists(os.path.abspath(options.output_dir) +'/indexes'):
-        os.makedirs(os.path.abspath(options.output_dir)+'/indexes')
-    fd, index_path = mkstemp(prefix='temp_', dir=(os.path.abspath(options.output_dir)+'/indexes/'))
+    if not os.path.exists(os.path.abspath(options.output_dir) + bin_dir + 'indexes'):
+        os.makedirs(os.path.abspath(options.output_dir) + bin_dir + 'indexes')
+    fd, index_path = mkstemp(prefix='temp_',\
+            dir=(os.path.abspath(options.output_dir) + bin_dir  + 'indexes/'))
     try:
-        os.mkdir(os.path.dirname(index_path))
+        os.mkdirs(os.path.dirname(index_path))
     except:
         pass
     
-    build_bowtie2_index(os.path.abspath(index_path), os.path.abspath(options.fasta_file))
+    fasta_file = options.fasta_file
+
+    build_bowtie2_index(os.path.abspath(index_path), os.path.abspath(fasta_file))
     assembly_index = os.path.abspath(index_path)
 
-    unaligned_dir = os.path.abspath(options.output_dir)+'/unaligned_reads/'
+    if bin_dir:
+        unaligned_dir = os.path.abspath(options.output_dir) + bin_dir + 'unaligned_reads/'
+    else:
+        unaligned_dir = os.path.abspath(options.output_dir) + bin_dir + '/unaligned_reads/'
     ensure_dir(unaligned_dir)
-    unaligned_file = unaligned_dir +  'unaligned.reads'
+    unaligned_file = unaligned_dir + 'unaligned.reads'
 
     #input_sam_file = output_sam_file
     read_type = " -f "
@@ -248,7 +278,7 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
     ignore = open('/dev/null', 'w')
     args = shlex.split(command) 
     bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE,
-            stderr=ignore)
+            )#stderr=ignore)
     bowtie_output, err = bowtie_proc.communicate()
     
     return unaligned_dir
@@ -274,15 +304,80 @@ def run_breakpoint_finder(options,unaligned,breakpoint_dir):
     call(call_arr,stderr=std_err_file)
     results(breakpoint_dir + 'interesting_bins.csv')
 
-    '''
-    read_files now split
-    '''
+
+def bin_coverage(options, bin_dir):
+    contig_to_coverage_map = {}
+    contig_to_bin_map = {}
+    with open(options.coverage_file,'r') as coverage_file:
+        for line in coverage_file:
+            split_line = line.split()
+            contig_to_coverage_map[split_line[0]] = float(split_line[1])
+    max_cvg = max(contig_to_coverage_map.values())
+    high = 1
+    low = 0
+    curr_bin = 0
+    bins = []
+    while len(contig_to_bin_map.keys()) < len(contig_to_coverage_map.keys()):
+        slice_dict = {k: v for k,v in contig_to_coverage_map.iteritems() if low<=v and high>v}
+        for contig in slice_dict.keys():
+            contig_to_bin_map[contig] = curr_bin
+        low = high
+        high += high
+        curr_bin += 1
+
+    bin_set = set(contig_to_bin_map.values())
+    fp_dict = {}
+    for bin in bin_set:
+        a_new_bin = bin_dir + "bin" + str(bin) + "/"
+        ensure_dir(a_new_bin)
+        shutil.copy(options.coverage_file, a_new_bin +\
+                os.path.basename(options.coverage_file))
+        fp_dict[bin] = open(a_new_bin + os.path.basename(options.fasta_file),'w')
+
+    with open(options.fasta_file,'r') as assembly:
+        for contig in contig_reader(assembly):
+            bin = contig_to_bin_map[contig['name'][1:].strip()]
+            fp_dict[bin].write(contig['name'])
+            fp_dict[bin].writelines(contig['sequence'])
+
+    for fp in fp_dict.values():
+        fp.close()
+
+    for fp in fp_dict.values():
+        name = fp.name
+        if os.stat(fp.name).st_size <= 10:
+            shutil.rmtree(os.path.dirname(fp.name))
 
 
-def run_lap(options, sam_output_location, reads_trimmed_location):
+def contig_reader(fasta_file):
+    save_line = ""
+    contig = {}
+    in_contig = False
+    for line in fasta_file:
+        if line[0] == '>' and in_contig:
+            save_line = line
+            ret_contig = contig
+            contig = {}
+            contig['sequence'] = []
+            contig['name'] = line
+            yield ret_contig
+        elif line[0] == '>':
+            contig['name'] = line
+            contig['sequence'] = []
+            in_contig = True
+        else:
+            contig['sequence'].append(line)
+    yield contig
+
+
+
+def run_lap(options, sam_output_location, reads_trimmed_location, bin_dir=''):
     """ Calculate the LAP using the previously computed SAM file. """
-
-    output_probs_dir = options.output_dir + "/lap/"
+    if bin_dir:
+        output_probs_dir = options.output_dir + bin_dir + "lap/"
+    else:
+        output_probs_dir = options.output_dir + "/lap/"
+    
     ensure_dir(output_probs_dir)
     output_probs_location = output_probs_dir + "output.prob"
     fp = open(output_probs_location, "w")
@@ -376,6 +471,7 @@ def run_reapr(options, sorted_bam_location):
     call(call_arr, stdout=FNULL)
 
     return reapr_output_dir + "/03.score.errors.gff"
+
 
 
 if __name__ == '__main__':

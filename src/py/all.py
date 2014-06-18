@@ -57,6 +57,12 @@ def main():
     step("CALCULATING ASSEMBLY PROBABILITY")
     run_lap(options, sam_output_location, reads_trimmed_location)
 
+    step("RUNNING SAMTOOLS")
+    bam_location, sorted_bam_location, pileup_file = \
+            run_samtools(options, sam_output_location)
+
+    step("DEPTH OF COVERAGE")
+    error_files.append(run_depth_of_coverage(options, pileup_file))
 
 
     for bin_dir in os.listdir(bins_dir):
@@ -73,10 +79,7 @@ def main():
             warning("Bin dir is: %s" % bin_dir)
             sam_output_location_dir = options.output_dir + '/sam/'
             sam_output_location = sam_output_location_dir + 'library.sam'
-            #ensure_dir(sam_output_location_dir)
             
-            
-                        
             outputBreakpointDir = options.output_dir + "/breakpoint/"
             ouputBreakpointLocation = outputBreakpointDir + "errorsDetected.csv"
             ensure_dir(outputBreakpointDir)
@@ -89,8 +92,8 @@ def main():
             bam_location, sorted_bam_location, pileup_file = \
                     run_samtools(options, sam_output_location)
 
-            step("DEPTH OF COVERAGE")
-            error_files.append(run_depth_of_coverage(options, pileup_file))
+            #step("DEPTH OF COVERAGE")
+            #error_files.append(run_depth_of_coverage(options, pileup_file))
             
             step("MATE-PAIR HAPPINESS")
             try:
@@ -98,21 +101,24 @@ def main():
             except:
                 e = sys.exc_info()[0]
                 error("Reapr failed to run with: %s" %  str(e))
-            
-        step("SUMMARY")
-        summary_file = open(options.output_dir + "/summary.gff", 'w')
-        misassemblies = []
-        for error_file in error_files:
-            for line in open(error_file, 'r'):
-                misassemblies.append(line.strip().split())
+    
+    options.output_dir = output_dir_saved
+    options.fasta_file = input_fasta_saved
 
-        # Sort misassemblies by start site.
-        for misassembly in sorted(misassemblies, \
-                key = lambda misassembly: int(misassembly[3])):
-            summary_file.write('\t'.join(misassembly) + '\n')
-        
-        summary_file.close()
-        results(options.output_dir + "/summary.gff")
+    step("SUMMARY")
+    summary_file = open(options.output_dir + "/summary.gff", 'w')
+    misassemblies = []
+    for error_file in error_files:
+        for line in open(error_file, 'r'):
+            misassemblies.append(line.strip().split())
+
+    # Sort misassemblies by start site.
+    for misassembly in sorted(misassemblies, \
+            key = lambda misassembly: int(misassembly[3])):
+        summary_file.write('\t'.join(misassembly) + '\n')
+    
+    summary_file.close()
+    results(options.output_dir + "/summary.gff")
 
 
     if options.email:

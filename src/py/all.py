@@ -45,10 +45,19 @@ def main():
     bins_dir = options.output_dir + "/bins/"
     ensure_dir(bins_dir)
 
-    bin_coverage(options,bins_dir)
+    contig_to_bin_map, bin_dir_dict = bin_coverage(options,bins_dir)
     
     input_fasta_saved = options.fasta_file
     output_dir_saved = options.output_dir
+    
+    step("ALIGNING READS")
+    unaligned_dir = run_bowtie2(options, sam_output_location)
+
+    split_sam_by_bin(sam_output_location, contig_to_bin_map, bin_dir_dict)
+    step("CALCULATING ASSEMBLY PROBABILITY")
+    run_lap(options, sam_output_location, reads_trimmed_location)
+
+
 
     for bin_dir in os.listdir(bins_dir):
         if 'bin' in bin_dir:
@@ -57,61 +66,66 @@ def main():
                     + bin_dir + '/' + os.path.basename(input_fasta_saved)
 
             options.output_dir = os.path.abspath(output_dir_saved) + '/bins/'\
-                    + bin_dir + '/'
+                    + bin_dir
 
             bin_dir_infix = '/bins/' + bin_dir + '/'
             bin_dir = os.path.abspath(options.output_dir) + '/bins/' + bin_dir + '/'
             warning("Bin dir is: %s" % bin_dir)
-            sam_output_location_dir = bin_dir + 'sam/'
+            sam_output_location_dir = options.output_dir + '/sam/'
             sam_output_location = sam_output_location_dir + 'library.sam'
-            ensure_dir(sam_output_location_dir)
+            #ensure_dir(sam_output_location_dir)
             
             
-            step("ALIGNING READS")
-            unaligned_dir = run_bowtie2(options, sam_output_location, bin_dir_infix)
+                        
+            outputBreakpointDir = options.output_dir + "/breakpoint/"
+            ouputBreakpointLocation = outputBreakpointDir + "errorsDetected.csv"
+            ensure_dir(outputBreakpointDir)
+            
+            step("BREAKPOINT")
+            error_files.append(run_breakpoint_finder(options,\
+                    unaligned_dir, outputBreakpointDir))
+            
+            step("RUNNING SAMTOOLS")
+            bam_location, sorted_bam_location, pileup_file = \
+                    run_samtools(options, sam_output_location)
 
-    exit()
-    step("CALCULATING ASSEMBLY PROBABILITY")
-    run_lap(options, sam_output_location, reads_trimmed_location)
+            step("DEPTH OF COVERAGE")
+            error_files.append(run_depth_of_coverage(options, pileup_file))
+            
+            step("MATE-PAIR HAPPINESS")
+            try:
+                error_files.append(run_reapr(options, sorted_bam_location))
+            except:
+                e = sys.exc_info()[0]
+                error("Reapr failed to run with: %s" %  str(e))
+            
+        step("SUMMARY")
+        summary_file = open(options.output_dir + "/summary.gff", 'w')
+        misassemblies = []
+        for error_file in error_files:
+            for line in open(error_file, 'r'):
+                misassemblies.append(line.strip().split())
 
-    outputBreakpointDir = options.output_dir + "/breakpoint/"
-    ouputBreakpointLocation = outputBreakpointDir + "errorsDetected.csv"
-    ensure_dir(outputBreakpointDir)
+        # Sort misassemblies by start site.
+        for misassembly in sorted(misassemblies, \
+                key = lambda misassembly: int(misassembly[3])):
+            summary_file.write('\t'.join(misassembly) + '\n')
+        
+        summary_file.close()
+        results(options.output_dir + "/summary.gff")
 
-
-    step("BREAKPOINT")
-    run_breakpoint_finder(options, unaligned_dir, outputBreakpointDir)
-    ##breakpoint --- takes too long with current implementation
-    ##alpha is length that must match
-    #call(["bin/assembly-testing/breakpoint-detection/breakpoint_indices.py", "-a", fasta_file, "-u", singleton_output_location, "-o", ouputBreakpointLocation ,  "--alpha", "20","--algorithm","naive"])
-
-    step("RUNNING SAMTOOLS")
-    bam_location, sorted_bam_location, pileup_file = run_samtools(options, sam_output_location)
-
-    step("DEPTH OF COVERAGE")
-    error_files.append(run_depth_of_coverage(options, pileup_file))
-
-    step("MATE-PAIR HAPPINESS")
-    error_files.append(run_reapr(options, sorted_bam_location))
-
-    step("SUMMARY")
-    summary_file = open(options.output_dir + "/summary.gff", 'w')
-    misassemblies = []
-    for error_file in error_files:
-        for line in open(error_file, 'r'):
-            misassemblies.append(line.strip().split())
-
-    # Sort misassemblies by start site.
-    for misassembly in sorted(misassemblies, key = lambda misassembly: int(misassembly[3])):
-        summary_file.write('\t'.join(misassembly) + '\n')
-
-    summary_file.close()
-    results(options.output_dir + "/summary.gff")
 
     if options.email:
         notify_complete(options.email,time.time()-start_time)
 
 
+
+
+
+
+    
+    
+   
 def get_options():
     parser = OptionParser()
     parser.add_option("-a", "--assembly-fasta", dest="fasta_file", \
@@ -202,6 +216,9 @@ def warning(*objs):
     print("INFO:\t",*objs, file=sys.stderr)
 
 
+def error(*objs):
+    print(bcolors.WARNING + "ERROR:\t" + bcolors.ENDC, *objs, file=sys.stderr)
+
 def build_bowtie2_index(index_name, reads_file):
     """
     Build a Bowtie2 index.
@@ -218,7 +235,7 @@ def build_bowtie2_index(index_name, reads_file):
     return index_name
 
 
-def run_bowtie2(options = None, output_sam = 'temp.sam', bin_dir = ""):
+def run_bowtie2(options = None, output_sam = 'temp.sam'):
     """
     Run Bowtie2 with the given options and save the SAM file.
     """
@@ -226,10 +243,10 @@ def run_bowtie2(options = None, output_sam = 'temp.sam', bin_dir = ""):
     # Using bowtie2.
     # Create the bowtie2 index if it wasn't given as input.
     #if not assembly_index:
-    if not os.path.exists(os.path.abspath(options.output_dir) + bin_dir + 'indexes'):
-        os.makedirs(os.path.abspath(options.output_dir) + bin_dir + 'indexes')
+    if not os.path.exists(os.path.abspath(options.output_dir) + '/indexes'):
+        os.makedirs(os.path.abspath(options.output_dir) + '/indexes')
     fd, index_path = mkstemp(prefix='temp_',\
-            dir=(os.path.abspath(options.output_dir) + bin_dir  + 'indexes/'))
+            dir=(os.path.abspath(options.output_dir)   + '/indexes/'))
     try:
         os.mkdirs(os.path.dirname(index_path))
     except:
@@ -240,10 +257,7 @@ def run_bowtie2(options = None, output_sam = 'temp.sam', bin_dir = ""):
     build_bowtie2_index(os.path.abspath(index_path), os.path.abspath(fasta_file))
     assembly_index = os.path.abspath(index_path)
 
-    if bin_dir:
-        unaligned_dir = os.path.abspath(options.output_dir) + bin_dir + 'unaligned_reads/'
-    else:
-        unaligned_dir = os.path.abspath(options.output_dir) + bin_dir + '/unaligned_reads/'
+    unaligned_dir = os.path.abspath(options.output_dir) + '/unaligned_reads/'
     ensure_dir(unaligned_dir)
     unaligned_file = unaligned_dir + 'unaligned.reads'
 
@@ -303,7 +317,39 @@ def run_breakpoint_finder(options,unaligned,breakpoint_dir):
     out_cmd(call_arr)
     call(call_arr,stderr=std_err_file)
     results(breakpoint_dir + 'interesting_bins.csv')
+    return breakpoint_dir + 'interesting_bins.csv'
 
+
+def split_sam_by_bin(sam_output_location, contig_to_bin_map, bin_dir_dict):
+    common_header = ""
+    output_bin = {}
+    output_fp = {}
+    for bin in set(contig_to_bin_map.values()):
+        output_bin[bin] = ""
+        bin_dir = bin_dir_dict[bin]
+        if os.path.exists(bin_dir):
+            ensure_dir(bin_dir + "sam/")
+            output_fp[bin]  = open(bin_dir + "sam/"\
+                    + os.path.basename(sam_output_location), 'w')
+
+    with open(sam_output_location, 'r') as sam_file:
+        for line in sam_file:
+            if line.split()[0] == "@HD" or line.split()[0] == "@PG"\
+                    or line.split()[0] == "@CO" or line.split()[0] == "@RG":
+                        for fp in output_fp.values():
+                            fp.write(line)
+            elif line.split()[0] == "@SQ":
+                bin = contig_to_bin_map[line.split()[1].split(':')[1]]
+                output_fp[bin].write(line)
+            else:
+                line_split = line.split('\t')
+                if line_split[2] == '*':
+                    pass
+                else:
+                    bin = contig_to_bin_map[line_split[2]]
+                    output_fp[bin].write(line)
+    
+        
 
 def bin_coverage(options, bin_dir):
     contig_to_coverage_map = {}
@@ -327,8 +373,10 @@ def bin_coverage(options, bin_dir):
 
     bin_set = set(contig_to_bin_map.values())
     fp_dict = {}
+    bin_dir_dict = {}
     for bin in bin_set:
         a_new_bin = bin_dir + "bin" + str(bin) + "/"
+        bin_dir_dict[bin] = a_new_bin
         ensure_dir(a_new_bin)
         shutil.copy(options.coverage_file, a_new_bin +\
                 os.path.basename(options.coverage_file))
@@ -348,6 +396,7 @@ def bin_coverage(options, bin_dir):
         if os.stat(fp.name).st_size <= 10:
             shutil.rmtree(os.path.dirname(fp.name))
 
+    return contig_to_bin_map,bin_dir_dict
 
 def contig_reader(fasta_file):
     save_line = ""
@@ -371,12 +420,9 @@ def contig_reader(fasta_file):
 
 
 
-def run_lap(options, sam_output_location, reads_trimmed_location, bin_dir=''):
+def run_lap(options, sam_output_location, reads_trimmed_location):
     """ Calculate the LAP using the previously computed SAM file. """
-    if bin_dir:
-        output_probs_dir = options.output_dir + bin_dir + "lap/"
-    else:
-        output_probs_dir = options.output_dir + "/lap/"
+    output_probs_dir = options.output_dir + "/lap/"
     
     ensure_dir(output_probs_dir)
     output_probs_location = output_probs_dir + "output.prob"
@@ -408,12 +454,14 @@ def run_samtools(options, sam_output_location):
     bam_location = bam_dir + "library.bam"
     sorted_bam_location = bam_dir + "sorted_library"
     bam_fp = open(bam_location, 'w+')
+    error_file_location = bam_dir + "error.log"
+    error_fp = open(error_file_location, 'w+')
 
     #warning("About to run samtools view to create bam")
     call_arr = ["bin/Reapr_1.0.17/src/samtools", "view", "-bS", sam_output_location]
     out_cmd(call_arr)
     #warning("That command outputs to file: ", bam_location)
-    call(call_arr, stdout = bam_fp, stderr = FNULL)
+    call(call_arr, stdout = bam_fp, stderr = error_fp)
 
     #warning("About to attempt to sort bam")
     call_arr = ["bin/Reapr_1.0.17/src/samtools", "sort", bam_location, sorted_bam_location]

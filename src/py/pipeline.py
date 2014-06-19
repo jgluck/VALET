@@ -557,9 +557,10 @@ def run_reapr(options, sorted_bam_location):
     reapr_perfect_prefix = options.output_dir + "/r_perfect_prefix"
     
     #warning("About to run reapr pipeline")
-    call_arr = [reapr_command, "pipeline", options.fasta_file, sorted_bam_location + ".bam", reapr_output_dir]
+    call_arr = [reapr_command, "pipeline", options.fasta_file,\
+            sorted_bam_location + ".bam", reapr_output_dir]
     out_cmd(call_arr)
-    call(call_arr, stdout=FNULL)
+    call(call_arr, stdout=FNULL, stderr=FNULL)
 
     call_arr = ["gunzip", reapr_output_dir + "/03.score.errors.gff"]
     out_cmd(call_arr)

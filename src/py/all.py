@@ -58,6 +58,7 @@ def main():
     if options.coverage_file is None:
         step("CALCULATING CONTIG COVERAGE")
         options.coverage_file = calculate_contig_coverage(options, pileup_file)
+        results(options.coverage_file)
 
     step("CALCULATING ASSEMBLY PROBABILITY")
     run_lap(options, sam_output_location, reads_trimmed_location)
@@ -91,14 +92,14 @@ def main():
             error_files.append(run_breakpoint_finder(options,\
                     unaligned_dir, outputBreakpointDir))
             
-            step("RUNNING SAMTOOLS")
+            step("RUNNING SAMTOOLS ON " + bin_dir_infix.upper())
             bam_location, sorted_bam_location, pileup_file = \
                     run_samtools(options, sam_output_location)
 
             #step("DEPTH OF COVERAGE")
             #error_files.append(run_depth_of_coverage(options, pileup_file))
             
-            step("MATE-PAIR HAPPINESS")
+            step("MATE-PAIR HAPPINESS ON " + bin_dir_infix.upper())
             try:
                 error_files.append(run_reapr(options, sorted_bam_location))
             except:
@@ -336,8 +337,7 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
 
     ignore = open('/dev/null', 'w')
     args = shlex.split(command) 
-    bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE,
-            )#stderr=ignore)
+    bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=ignore)
     bowtie_output, err = bowtie_proc.communicate()
     
     return unaligned_dir
@@ -477,7 +477,7 @@ def run_lap(options, sam_output_location, reads_trimmed_location):
     if options.first_mates:
         reads = [options.first_mates, options.second_mates]
 
-    call_arr = ["bin/lap/aligner/calc_prob.py", "-a", options.fasta_file,  "-s", sam_output_location,  "-q", "-i",  ','.join(reads)]
+    call_arr = ["bin/lap/aligner/calc_prob.py", "-a", options.fasta_file,  "-s", sam_output_location,  "-q", "-i",  ','.join(reads), "-n", options.coverage_file]
     out_cmd(call_arr)
     #warning("That command outputs to: ", output_probs_location)
     results(output_probs_location)

@@ -258,8 +258,8 @@ def calculate_contig_coverage(options, pileup_file):
 
         curr_coverage += int(fields[3])
         length += 1
-
-    coverage_file.write(prev_contig + '\t' + str(float(curr_coverage) / length) + '\n')
+    if prev_contig:
+        coverage_file.write(prev_contig + '\t' + str(float(curr_coverage) / length) + '\n')
     coverage_file.close()
 
     return coverage_filename

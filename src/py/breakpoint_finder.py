@@ -44,7 +44,8 @@ class BreakpointFinder:
         self.binned_breakpoint_file = self.breakpoint_dir + "binned_breakpoints.csv"
         self.collapsed_breakpoint_file = self.breakpoint_dir\
                 + "collapsed_breakpoints.csv"
-        self.bins_of_interest_file = self.breakpoint_dir + "interesting_bins.csv"
+        self.bins_of_interest_file = self.breakpoint_dir + "interesting_bins.gff"
+        self.meta_file = self.breakpoint_dir + "meta_data.data"
 
     def run_bowtie_index(self):
         FNULL = open('/dev/null', 'w')
@@ -103,6 +104,7 @@ class BreakpointFinder:
         num_bins = 0
         summed_var = 0
         std_dev = 0
+        cutoff = 0
         with open(self.collapsed_breakpoint_file,'r') as pass_1:
             for line in pass_1:
                 avg_bin_size += int(line.split()[0])
@@ -115,7 +117,7 @@ class BreakpointFinder:
             std_dev = math.sqrt(summed_var)
         with open(self.collapsed_breakpoint_file,'r') as pass_3,\
                 open(self.bins_of_interest_file,'w') as out_file:
-                    cutoff = 3 * std_dev
+                    cutoff = 2 * std_dev
                     for line in pass_3:
                         split_line = line.split()
                         if (float(split_line[0]) - avg_bin_size) > cutoff:
@@ -124,6 +126,9 @@ class BreakpointFinder:
                                     %(split_line[1],split_line[2],\
                                     split_line[2]+self.bin_size,split_line[0],\
                                     avg_bin_size, std_dev))
+        with open(self.meta_file, 'w') as meta_f:
+            meta_f.write("Avg bin size: %f\nStd_Dev: %f\nCutoff: %f\n"\
+                    % (avg_bin_size, std_dev, cutoff)) 
 
 
 

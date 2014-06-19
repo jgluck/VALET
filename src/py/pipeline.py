@@ -69,6 +69,15 @@ def main():
     contig_to_bin_map, bin_dir_dict = bin_coverage(options,bins_dir)
     split_sam_by_bin(sam_output_location, contig_to_bin_map, bin_dir_dict)
 
+
+    outputBreakpointDir = options.output_dir + "/breakpoint/"
+    ouputBreakpointLocation = outputBreakpointDir + "errorsDetected.csv"
+    ensure_dir(outputBreakpointDir)
+    
+    step("BREAKPOINT")
+    error_files.append(run_breakpoint_finder(options,\
+            unaligned_dir, outputBreakpointDir))
+
     for bin_dir in os.listdir(bins_dir):
         if 'bin' in bin_dir:
             
@@ -83,14 +92,6 @@ def main():
             warning("Bin dir is: %s" % bin_dir)
             sam_output_location_dir = options.output_dir + '/sam/'
             sam_output_location = sam_output_location_dir + 'library.sam'
-            
-            outputBreakpointDir = options.output_dir + "/breakpoint/"
-            ouputBreakpointLocation = outputBreakpointDir + "errorsDetected.csv"
-            ensure_dir(outputBreakpointDir)
-            
-            step("BREAKPOINT")
-            error_files.append(run_breakpoint_finder(options,\
-                    unaligned_dir, outputBreakpointDir))
             
             step("RUNNING SAMTOOLS ON " + bin_dir_infix.upper())
             bam_location, sorted_bam_location, pileup_file = \
@@ -113,8 +114,9 @@ def main():
     summary_file = open(options.output_dir + "/summary.gff", 'w')
     misassemblies = []
     for error_file in error_files:
-        for line in open(error_file, 'r'):
-            misassemblies.append(line.strip().split())
+        if error_file:
+            for line in open(error_file, 'r'):
+                misassemblies.append(line.strip().split())
 
     # Sort misassemblies by start site.
     for misassembly in sorted(misassemblies, \
@@ -210,7 +212,7 @@ def notify_complete(target_email,t):
 
 
 def line(x):
-    print ("-"*x)
+    print ("-"*x, file=sys.stderr)
 
 def step(*objs):
     line(75)
@@ -361,8 +363,8 @@ def run_breakpoint_finder(options,unaligned,breakpoint_dir):
             '-b 500', '-o', breakpoint_dir]
     out_cmd(call_arr)
     call(call_arr,stderr=std_err_file)
-    results(breakpoint_dir + 'interesting_bins.csv')
-    return breakpoint_dir + 'interesting_bins.csv'
+    results(breakpoint_dir + 'interesting_bins.gff')
+    return breakpoint_dir + 'interesting_bins.gff'
 
 
 def split_sam_by_bin(sam_output_location, contig_to_bin_map, bin_dir_dict):
@@ -563,7 +565,10 @@ def run_reapr(options, sorted_bam_location):
     out_cmd(call_arr)
     call(call_arr, stdout=FNULL)
 
-    return reapr_output_dir + "/03.score.errors.gff"
+    if os.path.exists(reapr_output_dir + "/03.score.errors.gff"):
+        return reapr_output_dir + "/03.score.errors.gff"
+    else:
+        return None
 
 
 

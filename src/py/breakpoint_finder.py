@@ -47,9 +47,10 @@ class BreakpointFinder:
         self.bins_of_interest_file = self.breakpoint_dir + "interesting_bins.csv"
 
     def run_bowtie_index(self):
+        FNULL = open('/dev/null', 'w')
         call_arr = [self.bowtie_build_loc, self.assembly_file, self.index_prefix]
         #out_cmd(call_arr)
-        call(call_arr)
+        call(call_arr, stdout = FNULL, stderr = FNULL)
 
     def run_bowtie_2(self):
         for file_name in os.listdir(self.reads_dir):

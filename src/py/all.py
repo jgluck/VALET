@@ -44,26 +44,30 @@ def main():
     
     bins_dir = options.output_dir + "/bins/"
     ensure_dir(bins_dir)
-
-    contig_to_bin_map, bin_dir_dict = bin_coverage(options,bins_dir)
-    
+ 
     input_fasta_saved = options.fasta_file
     output_dir_saved = options.output_dir
     
     step("ALIGNING READS")
     unaligned_dir = run_bowtie2(options, sam_output_location)
 
-    split_sam_by_bin(sam_output_location, contig_to_bin_map, bin_dir_dict)
-    step("CALCULATING ASSEMBLY PROBABILITY")
-    run_lap(options, sam_output_location, reads_trimmed_location)
-
     step("RUNNING SAMTOOLS")
     bam_location, sorted_bam_location, pileup_file = \
             run_samtools(options, sam_output_location)
 
+    if options.coverage_file is None:
+        step("CALCULATING CONTIG COVERAGE")
+        options.coverage_file = calculate_contig_coverage(options, pileup_file)
+        results(options.coverage_file)
+
+    step("CALCULATING ASSEMBLY PROBABILITY")
+    run_lap(options, sam_output_location, reads_trimmed_location)
+
     step("DEPTH OF COVERAGE")
     error_files.append(run_depth_of_coverage(options, pileup_file))
 
+    contig_to_bin_map, bin_dir_dict = bin_coverage(options,bins_dir)
+    split_sam_by_bin(sam_output_location, contig_to_bin_map, bin_dir_dict)
 
     for bin_dir in os.listdir(bins_dir):
         if 'bin' in bin_dir:
@@ -88,14 +92,14 @@ def main():
             error_files.append(run_breakpoint_finder(options,\
                     unaligned_dir, outputBreakpointDir))
             
-            step("RUNNING SAMTOOLS")
+            step("RUNNING SAMTOOLS ON " + bin_dir_infix.upper())
             bam_location, sorted_bam_location, pileup_file = \
                     run_samtools(options, sam_output_location)
 
             #step("DEPTH OF COVERAGE")
             #error_files.append(run_depth_of_coverage(options, pileup_file))
             
-            step("MATE-PAIR HAPPINESS")
+            step("MATE-PAIR HAPPINESS ON " + bin_dir_infix.upper())
             try:
                 error_files.append(run_reapr(options, sorted_bam_location))
             except:
@@ -181,8 +185,9 @@ def get_options():
     #    warning("You need to provide the second read file with -d")
     #    should_err = True
     if not options.coverage_file:
-        warning("You need to provide the coverage file with -c")
-        should_err = True
+        warning("Coverage file not provided, will create one.")
+        
+        #should_err = True
     
     if should_err:
         parser.print_help()
@@ -224,6 +229,41 @@ def warning(*objs):
 
 def error(*objs):
     print(bcolors.WARNING + "ERROR:\t" + bcolors.ENDC, *objs, file=sys.stderr)
+
+
+def calculate_contig_coverage(options, pileup_file):
+    """
+    Calculate contig coverage.  The coverage of a contig is the mean per-bp coverage.
+    """
+
+    coverage_filename = options.output_dir + '/coverage/temp.cvg'
+    coverage_file = open(coverage_filename, 'w')
+
+    prev_contig = None
+    curr_contig = None
+
+    length = 0
+    curr_coverage = 0
+
+    for record in open(pileup_file, 'r'):
+        fields = record.strip().split()
+
+        if prev_contig != fields[0]:
+            if prev_contig:
+                coverage_file.write(prev_contig + '\t' + str(float(curr_coverage) / length) + '\n')
+
+            prev_contig = fields[0]
+            length = 0
+            curr_coverage = 0
+
+        curr_coverage += int(fields[3])
+        length += 1
+
+    coverage_file.write(prev_contig + '\t' + str(float(curr_coverage) / length) + '\n')
+    coverage_file.close()
+
+    return coverage_filename
+
 
 def build_bowtie2_index(index_name, reads_file):
     """
@@ -297,8 +337,7 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
 
     ignore = open('/dev/null', 'w')
     args = shlex.split(command) 
-    bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE,
-            )#stderr=ignore)
+    bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=ignore)
     bowtie_output, err = bowtie_proc.communicate()
     
     return unaligned_dir
@@ -438,7 +477,7 @@ def run_lap(options, sam_output_location, reads_trimmed_location):
     if options.first_mates:
         reads = [options.first_mates, options.second_mates]
 
-    call_arr = ["bin/lap/aligner/calc_prob.py", "-a", options.fasta_file,  "-s", sam_output_location,  "-q", "-i",  ','.join(reads)]
+    call_arr = ["bin/lap/aligner/calc_prob.py", "-a", options.fasta_file,  "-s", sam_output_location,  "-q", "-i",  ','.join(reads), "-n", options.coverage_file]
     out_cmd(call_arr)
     #warning("That command outputs to: ", output_probs_location)
     results(output_probs_location)

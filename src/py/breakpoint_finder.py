@@ -124,7 +124,8 @@ class BreakpointFinder:
                             out_file.write("%s\tBreakpoint_finder\tExcessive_alignment\
                                     \t%d\t%d\t%d\t.\t.\tavg_bin_size=%f;std_dev=%f\n"\
                                     %(split_line[1],split_line[2],\
-                                    split_line[2]+self.bin_size,split_line[0],\
+                                    int(split_line[2])+self.bin_size,\
+                                    float(split_line[0]),\
                                     avg_bin_size, std_dev))
         with open(self.meta_file, 'w') as meta_f:
             meta_f.write("Avg bin size: %f\nStd_Dev: %f\nCutoff: %f\n"\

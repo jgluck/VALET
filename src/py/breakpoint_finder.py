@@ -94,7 +94,7 @@ class BreakpointFinder:
                         out_file.write(match.strip()+('\t%s\n'%(self.w_s)))
 
     def collapse_bins(self):
-        call_str = "awk '{printf \"%%s\\t%%s\\n\",$1,$6}' %s | sort | uniq -c | tee %s" %(self.binned_breakpoint_file, self.collapsed_breakpoint_file)
+        call_str = "awk '{printf \"%%s\\t%%s\\n\",$1,$6}' %s | sort | uniq -c > %s" %(self.binned_breakpoint_file, self.collapsed_breakpoint_file)
         out_cmd(call_str)
         call(call_str,shell=True)
 

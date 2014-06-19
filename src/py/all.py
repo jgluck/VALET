@@ -273,7 +273,7 @@ def build_bowtie2_index(index_name, reads_file):
     # Bad workaround.
     out_cmd([command])
 
-    bowtie2_build_proc = subprocess.Popen(command, shell = True, stdout = FNULL) #, stderr = FNULL)
+    bowtie2_build_proc = subprocess.Popen(command, shell = True, stdout = FNULL, stderr = FNULL)
     bowtie_output, err = bowtie2_build_proc.communicate()
     bowtie2_build_proc.wait()
 

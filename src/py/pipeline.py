@@ -26,7 +26,7 @@ def main():
     (options, args) = get_options()
 
     start_time = time.time()
-    fasta_file = options.fasta_file #fasta_file = "data/input/pairs/soap.trimmed.fna"
+    fasta_file = options.fasta_file
 
     error_files = []
     
@@ -79,33 +79,33 @@ def main():
             unaligned_dir, outputBreakpointDir))
 
     for bin_dir in os.listdir(bins_dir):
-        if 'bin' in bin_dir:
-            
-            options.fasta_file = os.path.abspath(output_dir_saved) + '/bins/'\
-                    + bin_dir + '/' + os.path.basename(input_fasta_saved)
+        #if 'bin' in bin_dir:
+        coverages = bin_dir
+        options.fasta_file = os.path.abspath(output_dir_saved) + '/bins/'\
+                + bin_dir + '/' + os.path.basename(input_fasta_saved)
 
-            options.output_dir = os.path.abspath(output_dir_saved) + '/bins/'\
-                    + bin_dir
+        options.output_dir = os.path.abspath(output_dir_saved) + '/bins/'\
+                + bin_dir
 
-            bin_dir_infix = '/bins/' + bin_dir + '/'
-            bin_dir = os.path.abspath(options.output_dir) + '/bins/' + bin_dir + '/'
-            warning("Bin dir is: %s" % bin_dir)
-            sam_output_location_dir = options.output_dir + '/sam/'
-            sam_output_location = sam_output_location_dir + 'library.sam'
-            
-            step("RUNNING SAMTOOLS ON " + bin_dir_infix.upper())
-            bam_location, sorted_bam_location, pileup_file = \
-                    run_samtools(options, sam_output_location)
+        bin_dir_infix = '/bins/' + bin_dir + '/'
+        bin_dir = os.path.abspath(options.output_dir) + '/bins/' + bin_dir + '/'
+        #warning("Bin dir is: %s" % bin_dir)
+        sam_output_location_dir = options.output_dir + '/sam/'
+        sam_output_location = sam_output_location_dir + 'library.sam'
+        
+        step("RUNNING SAMTOOLS ON COVERAGE BIN " + coverages)
+        bam_location, sorted_bam_location, pileup_file = \
+                run_samtools(options, sam_output_location)
 
-            #step("DEPTH OF COVERAGE")
-            #error_files.append(run_depth_of_coverage(options, pileup_file))
-            
-            step("MATE-PAIR HAPPINESS ON " + bin_dir_infix.upper())
-            try:
-                error_files.append(run_reapr(options, sorted_bam_location))
-            except:
-                e = sys.exc_info()[0]
-                error("Reapr failed to run with: %s" %  str(e))
+        #step("DEPTH OF COVERAGE")
+        #error_files.append(run_depth_of_coverage(options, pileup_file))
+        
+        step("MATE-PAIR HAPPINESS ON COVERAGE BIN " + coverages)
+        try:
+            error_files.append(run_reapr(options, sorted_bam_location))
+        except:
+            e = sys.exc_info()[0]
+            error("Reapr failed to run with: %s" %  str(e))
     
     options.output_dir = output_dir_saved
     options.fasta_file = input_fasta_saved
@@ -116,11 +116,11 @@ def main():
     for error_file in error_files:
         if error_file:
             for line in open(error_file, 'r'):
-                misassemblies.append(line.strip().split())
+                misassemblies.append(line.strip().split('\t'))
 
     # Sort misassemblies by start site.
     for misassembly in sorted(misassemblies, \
-            key = lambda misassembly: int(misassembly[3])):
+            key = lambda misassembly: (misassembly[0], int(misassembly[3]))):
         summary_file.write('\t'.join(misassembly) + '\n')
     
     summary_file.close()
@@ -129,13 +129,6 @@ def main():
 
     if options.email:
         notify_complete(options.email,time.time()-start_time)
-
-
-
-
-
-
-    
     
    
 def get_options():
@@ -153,7 +146,7 @@ def get_options():
     parser.add_option("-o", "--output-dir", dest="output_dir", \
             help = "Output directory", default="data/output/")
     parser.add_option("-w", "--window-size", dest="window_size", \
-            help = "Sliding window size when determining misassemblies.", default = "100")
+            help = "Sliding window size when determining misassemblies.", default = "200")
     parser.add_option("-q", "--fastq", dest="fastq_file", \
             default=False, action='store_true', \
             help="if set, input reads are fastq format (fasta by default).")    
@@ -173,6 +166,10 @@ def get_options():
             help="bowtie2 parameter to set the max number of alignments.")
     parser.add_option("-e", "--email", dest="email", \
             help="Email to notify when job completes")
+    parser.add_option("-g", "--min-coverage", dest="min_coverage", type="int", default=0, \
+            help="Minimum average coverage to run misassembly detection.")
+    parser.add_option("-l", "--coverage-multiplier", dest="coverage_multiplier", type=float, default=.1, \
+            help="When binning by coverage, the new high = high + high * multiplier")
 
     (options, args) = parser.parse_args()
 
@@ -386,43 +383,71 @@ def split_sam_by_bin(sam_output_location, contig_to_bin_map, bin_dir_dict):
                         for fp in output_fp.values():
                             fp.write(line)
             elif line.split()[0] == "@SQ":
-                bin = contig_to_bin_map[line.split()[1].split(':')[1]]
-                output_fp[bin].write(line)
+                # TODO: Clean up.
+                if line.split()[1].split(':')[1] in contig_to_bin_map:
+                    bin = contig_to_bin_map[line.split()[1].split(':')[1]]
+                    output_fp[bin].write(line)
             else:
                 line_split = line.split('\t')
                 if line_split[2] == '*':
                     pass
                 else:
-                    bin = contig_to_bin_map[line_split[2]]
-                    output_fp[bin].write(line)
+                    # TODO: Clean up.
+                    if line_split[2] in contig_to_bin_map:
+                        bin = contig_to_bin_map[line_split[2]]
+                        output_fp[bin].write(line)
     
         
+def increment_coverage_window(options, low, high):
+    """ Find new low/high boundaries for coverage bins. """
+
+    low = high
+    prev_high = high
+    high = int(high + high * options.coverage_multiplier)
+    if high == prev_high:
+        high = high + 1
+
+    return low, high
+
 
 def bin_coverage(options, bin_dir):
     contig_to_coverage_map = {}
     contig_to_bin_map = {}
+    bin_to_name_map = {}
+
     with open(options.coverage_file,'r') as coverage_file:
         for line in coverage_file:
             split_line = line.split()
-            contig_to_coverage_map[split_line[0]] = float(split_line[1])
+            if float(split_line[1]) >= options.min_coverage:
+                # Only store contigs who are above minimum avg coverage.
+                contig_to_coverage_map[split_line[0]] = float(split_line[1])
+
     max_cvg = max(contig_to_coverage_map.values())
-    high = 1
-    low = 0
+
+    high = int(options.min_coverage + options.min_coverage * .1)
+    if high <= options.min_coverage:
+        high = high + 1
+    low = options.min_coverage
+
     curr_bin = 0
     bins = []
     while len(contig_to_bin_map.keys()) < len(contig_to_coverage_map.keys()):
         slice_dict = {k: v for k,v in contig_to_coverage_map.iteritems() if low<=v and high>v}
         for contig in slice_dict.keys():
             contig_to_bin_map[contig] = curr_bin
-        low = high
-        high += high
+
+        bin_to_name_map[curr_bin] = (low, high)
+
+        low, high = increment_coverage_window(options, low, high)
+
         curr_bin += 1
 
     bin_set = set(contig_to_bin_map.values())
     fp_dict = {}
     bin_dir_dict = {}
     for bin in bin_set:
-        a_new_bin = bin_dir + "bin" + str(bin) + "/"
+        #a_new_bin = bin_dir + "bin" + str(bin) + "/"
+        a_new_bin = bin_dir + str(bin_to_name_map[bin][0]) + "x-" + str(bin_to_name_map[bin][1]) + "x/"
         bin_dir_dict[bin] = a_new_bin
         ensure_dir(a_new_bin)
         shutil.copy(options.coverage_file, a_new_bin +\
@@ -431,9 +456,11 @@ def bin_coverage(options, bin_dir):
 
     with open(options.fasta_file,'r') as assembly:
         for contig in contig_reader(assembly):
-            bin = contig_to_bin_map[contig['name'][1:].strip()]
-            fp_dict[bin].write(contig['name'])
-            fp_dict[bin].writelines(contig['sequence'])
+            # TODO: Clean up.
+            if contig['name'][1:].strip() in contig_to_bin_map:
+                bin = contig_to_bin_map[contig['name'][1:].strip()]
+                fp_dict[bin].write(contig['name'])
+                fp_dict[bin].writelines(contig['sequence'])
 
     for fp in fp_dict.values():
         fp.close()
@@ -444,6 +471,7 @@ def bin_coverage(options, bin_dir):
             shutil.rmtree(os.path.dirname(fp.name))
 
     return contig_to_bin_map,bin_dir_dict
+
 
 def contig_reader(fasta_file):
     save_line = ""
@@ -533,14 +561,13 @@ def run_depth_of_coverage(options, pileup_file):
 
     dp_fp = options.output_dir + "/coverage/errors_cov.gff"
     abundance_file = options.coverage_file
-    call_arr = ["src/py/depth_of_coverage.py", "-a", abundance_file, "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g"]
+    #call_arr = ["src/py/depth_of_coverage.py", "-a", abundance_file, "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g", "-e"]
+    call_arr = ["src/py/depth_of_coverage.py", "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g", "-e"]
     out_cmd(call_arr)
     call(call_arr)
     results(dp_fp)
 
-    return dp_fp
-
-    
+    return dp_fp    
 
 
 def run_reapr(options, sorted_bam_location):
@@ -559,11 +586,11 @@ def run_reapr(options, sorted_bam_location):
     #warning("About to run reapr pipeline")
     call_arr = [reapr_command, "pipeline", options.fasta_file, sorted_bam_location + ".bam", reapr_output_dir]
     out_cmd(call_arr)
-    call(call_arr, stdout=FNULL)
+    call(call_arr, stdout=FNULL, stderr=FNULL)
 
     call_arr = ["gunzip", reapr_output_dir + "/03.score.errors.gff"]
     out_cmd(call_arr)
-    call(call_arr, stdout=FNULL)
+    call(call_arr, stdout=FNULL, stderr=FNULL)
 
     if os.path.exists(reapr_output_dir + "/03.score.errors.gff"):
         return reapr_output_dir + "/03.score.errors.gff"

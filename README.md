@@ -10,7 +10,7 @@ Once the repository has been cloned, to install the required tools run the comma
 Test the installation by running the following command:
 
 ```
-src/py/all.py -a test/carsonella_asm.fna -c test/carsonella_asm.cvg -q -1 test/lib1.1.fastq -2 test/lib1.2.fastq -o test_validate
+src/py/pipeline.py -a test/carsonella_asm.fna -c test/carsonella_asm.cvg -q -1 test/lib1.1.fastq -2 test/lib1.2.fastq -o test_validate
 ```
 
 The summary of misassemblies are stored in [GFF format](http://www.sanger.ac.uk/resources/software/gff/spec.html):

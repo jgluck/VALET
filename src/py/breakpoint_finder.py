@@ -121,7 +121,7 @@ class BreakpointFinder:
                     for line in pass_3:
                         split_line = line.split()
                         if (float(split_line[0]) - avg_bin_size) > cutoff:
-                            out_file.write("%s\tBreakpoint_finder\tExcessive_alignment\
+                            out_file.write("%s\tBreakpoint_finder\tBreakpoint_Finder_excessive_alignment\
                                     \t%d\t%d\t%d\t.\t.\tavg_bin_size=%f;std_dev=%f;\
                                     singletons_aligned_in_bin=%f\n"\
                                     %(split_line[1],\

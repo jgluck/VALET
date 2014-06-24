@@ -132,8 +132,8 @@ class BreakpointFinder:
                                     int(split_line[0]),\
                                     float(avg_bin_size), \
                                     float(std_dev),\
-                                    float(split_line[0],\
-                                    color)))
+                                    float(split_line[0]),\
+                                    color))
         with open(self.meta_file, 'w') as meta_f:
             meta_f.write("Avg bin size: %f\nStd_Dev: %f\nCutoff: %f\n"\
                     % (float(avg_bin_size), float(std_dev), float(cutoff))) 

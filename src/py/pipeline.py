@@ -360,7 +360,7 @@ def run_breakpoint_finder(options,unaligned,breakpoint_dir):
     call_arr = ['src/py/breakpoint_finder.py',\
             '-a', options.fasta_file,\
             '-r', breakpoint_dir + 'split_reads/',\
-            '-b 500', '-o', breakpoint_dir]
+            '-b 200', '-o', breakpoint_dir]
     out_cmd(call_arr)
     call(call_arr,stderr=std_err_file)
     results(breakpoint_dir + 'interesting_bins.gff')

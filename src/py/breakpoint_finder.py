@@ -118,19 +118,22 @@ class BreakpointFinder:
         with open(self.collapsed_breakpoint_file,'r') as pass_3,\
                 open(self.bins_of_interest_file,'w') as out_file:
                     cutoff = 2 * std_dev
+                    color = "#FF9900"
                     for line in pass_3:
                         split_line = line.split()
                         if (float(split_line[0]) - avg_bin_size) > cutoff:
-                            out_file.write("%s\tBreakpoint_finder\tBreakpoint_Finder_excessive_alignment\
+                            out_file.write("%s\tBreakpoint_finder\
+                                    \tBreakpoint_Finder_excessive_alignment\
                                     \t%d\t%d\t%d\t.\t.\tavg_bin_size=%f;std_dev=%f;\
-                                    singletons_aligned_in_bin=%f\n"\
+                                    singletons_aligned_in_bin=%f;color=%s\n"\
                                     %(split_line[1],\
                                     int(split_line[2]),\
                                     int(split_line[2])+self.bin_size,\
                                     int(split_line[0]),\
                                     float(avg_bin_size), \
                                     float(std_dev),\
-                                    float(split_line[0])))
+                                    float(split_line[0],\
+                                    color)))
         with open(self.meta_file, 'w') as meta_f:
             meta_f.write("Avg bin size: %f\nStd_Dev: %f\nCutoff: %f\n"\
                     % (float(avg_bin_size), float(std_dev), float(cutoff))) 

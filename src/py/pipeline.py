@@ -12,6 +12,7 @@ import sys
 import time
 
 FNULL = open('/dev/null', 'w')
+base_path = os.path.dirname(sys.argv[0])[:-len('src/py/')]
 
 class bcolors:
     HEADER = '\033[95m'
@@ -268,7 +269,7 @@ def build_bowtie2_index(index_name, reads_file):
     """
     Build a Bowtie2 index.
     """
-    command = "bin/bowtie2-2.2.2/bowtie2-build " + os.path.abspath(reads_file) + " " + os.path.abspath(index_name)
+    command = os.path.join(base_path, "bin/bowtie2-2.2.2/bowtie2-build ") + os.path.abspath(reads_file) + " " + os.path.abspath(index_name)
 
     # Bad workaround.
     out_cmd([command])
@@ -317,20 +318,19 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
                 + " -2 " + options.second_mates + " -p " + options.threads\
                 + " --very-sensitive -a " + " --reorder --"\
                 + options.orientation + " -I " + options.min_insert_size\
-                + " -X " + options.max_insert_size + ' --un-conc '\
+                + " -X " + options.max_insert_size + " --un-conc "\
                 + unaligned_file
     else:
         bowtie2_args = "-a -x " + assembly_index + read_type + " -U "\
                 + options.reads_filenames + " --very-sensitive -a "\
-                + " --reorder -p " + options.threads + ' --un '\
-                + unaligned_file
+                + " --reorder -p " + options.threads + " --un " + unaligned_file
 
     if not options:
         sys.stderr.write("[ERROR] No Bowtie2 options specified" + '\n')
         return
     
     # Using bowtie 2.
-    command = "bin/bowtie2-2.2.2/bowtie2 " + bowtie2_args + " -S " + output_sam
+    command = os.path.join(base_path, "bin/bowtie2-2.2.2/bowtie2 ") + bowtie2_args + " -S " + output_sam
     
     out_cmd([command])
 
@@ -346,7 +346,7 @@ def run_breakpoint_finder(options,unaligned,breakpoint_dir):
     '''
     attempts to find breakpoints
     '''
-    call_arr = ['src/py/breakpoint_splitter.py',\
+    call_arr = [os.path.join(base_path,'src/py/breakpoint_splitter.py'),\
             '-u', unaligned,\
             '-o', breakpoint_dir + 'split_reads/']
 
@@ -354,7 +354,7 @@ def run_breakpoint_finder(options,unaligned,breakpoint_dir):
     call(call_arr)
     
     std_err_file = open(breakpoint_dir + 'std_err.log','w')
-    call_arr = ['src/py/breakpoint_finder.py',\
+    call_arr = [os.path.join(base_path, 'src/py/breakpoint_finder.py'),\
             '-a', options.fasta_file,\
             '-r', breakpoint_dir + 'split_reads/',\
             '-b 200', '-o', breakpoint_dir]
@@ -507,7 +507,7 @@ def run_lap(options, sam_output_location, reads_trimmed_location):
     if options.first_mates:
         reads = [options.first_mates, options.second_mates]
 
-    call_arr = ["bin/lap/aligner/calc_prob.py", "-a", options.fasta_file,  "-s", sam_output_location,  "-q", "-i",  ','.join(reads), "-n", options.coverage_file]
+    call_arr = [os.path.join(base_path, "bin/lap/aligner/calc_prob.py"), "-a", options.fasta_file,  "-s", sam_output_location,  "-q", "-i",  ','.join(reads), "-n", options.coverage_file]
     out_cmd(call_arr)
     #warning("That command outputs to: ", output_probs_location)
     results(output_probs_location)
@@ -515,7 +515,7 @@ def run_lap(options, sam_output_location, reads_trimmed_location):
     call(call_arr, stdout=fp)
     output_sum_probs_location = output_probs_dir + "output.sum"
 
-    call_arr = ["bin/lap/aligner/sum_prob.py", "-i", output_probs_location]
+    call_arr = [os.path.join(base_path, "bin/lap/aligner/sum_prob.py"), "-i", output_probs_location]
     out_cmd(call_arr)
     call(call_arr, stdout=open(output_sum_probs_location,'w'))
     results(output_sum_probs_location)
@@ -533,13 +533,13 @@ def run_samtools(options, sam_output_location):
     error_fp = open(error_file_location, 'w+')
 
     #warning("About to run samtools view to create bam")
-    call_arr = ["bin/Reapr_1.0.17/src/samtools", "view", "-bS", sam_output_location]
+    call_arr = [os.path.join(base_path, "bin/Reapr_1.0.17/src/samtools"), "view", "-bS", sam_output_location]
     out_cmd(call_arr)
     #warning("That command outputs to file: ", bam_location)
     call(call_arr, stdout = bam_fp, stderr = error_fp)
 
     #warning("About to attempt to sort bam")
-    call_arr = ["bin/Reapr_1.0.17/src/samtools", "sort", bam_location, sorted_bam_location]
+    call_arr = [os.path.join(base_path, "bin/Reapr_1.0.17/src/samtools"), "sort", bam_location, sorted_bam_location]
     out_cmd(call_arr)
     call(call_arr, stderr = FNULL)
 
@@ -547,7 +547,7 @@ def run_samtools(options, sam_output_location):
     ensure_dir(coverage_file_dir)
     pileup_file = coverage_file_dir + "mpileup_output.out"
     p_fp = open(pileup_file, 'w')
-    call_arr = ["bin/Reapr_1.0.17/src/samtools", "mpileup", "-A", "-f", options.fasta_file, sorted_bam_location + ".bam"]
+    call_arr = [os.path.join(base_path, "bin/Reapr_1.0.17/src/samtools"), "mpileup", "-A", "-f", options.fasta_file, sorted_bam_location + ".bam"]
     out_cmd(call_arr)
     results(pileup_file)
     #warning("That command outputs to file: ", pileup_file)
@@ -562,7 +562,7 @@ def run_depth_of_coverage(options, pileup_file):
     dp_fp = options.output_dir + "/coverage/errors_cov.gff"
     abundance_file = options.coverage_file
     #call_arr = ["src/py/depth_of_coverage.py", "-a", abundance_file, "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g", "-e"]
-    call_arr = ["src/py/depth_of_coverage.py", "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g", "-e"]
+    call_arr = [os.path.join(base_path, "src/py/depth_of_coverage.py"), "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g", "-e"]
     out_cmd(call_arr)
     call(call_arr)
     results(dp_fp)
@@ -573,7 +573,7 @@ def run_depth_of_coverage(options, pileup_file):
 def run_reapr(options, sorted_bam_location):
     """ Run REAPR. """
 
-    reapr_command = "bin/Reapr_1.0.17/reapr"
+    reapr_command = os.path.join(base_path, "bin/Reapr_1.0.17/reapr")
 
     #warning("About to run facheck")
     call_arr = [reapr_command, "facheck", options.fasta_file ]

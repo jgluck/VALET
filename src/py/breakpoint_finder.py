@@ -14,10 +14,11 @@ class BreakpointFinder:
         self.singleton_halves = []
         self.read_lengths = {}
         self.getOptions()
+        self.base_path = os.path.dirname(sys.argv[0])[:-len("/src/py")]
         self.set_locations()
     
     def set_locations(self):
-        self.bowtie_dir = "/cbcb/project-scratch/cmhill/tools/bowtie2-2.2.2/"
+        self.bowtie_dir = os.path.join(self.base_path, "bin/bowtie2-2.2.2/")
         self.bowtie_loc = self.bowtie_dir + "bowtie2"
         self.bowtie_build_loc = self.bowtie_dir + "bowtie2-build"
         self.breakpoint_dir = self.options.output_dir
@@ -50,7 +51,7 @@ class BreakpointFinder:
     def run_bowtie_index(self):
         FNULL = open('/dev/null', 'w')
         call_arr = [self.bowtie_build_loc, self.assembly_file, self.index_prefix]
-        #out_cmd(call_arr)
+        out_cmd(call_arr)
         call(call_arr, stdout = FNULL, stderr = FNULL)
 
     def run_bowtie_2(self):

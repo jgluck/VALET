@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import print_function
+from collections import defaultdict
 from subprocess import call
 from optparse import OptionParser
 from tempfile import mkstemp
@@ -113,6 +114,7 @@ def main():
 
     step("SUMMARY")
     summary_file = open(options.output_dir + "/summary.gff", 'w')
+    suspicious_file = open(options.output_dir + "/suspicious.gff", 'w')
     misassemblies = []
     for error_file in error_files:
         if error_file:
@@ -120,13 +122,20 @@ def main():
                 misassemblies.append(line.strip().split('\t'))
 
     # Sort misassemblies by start site.
-    for misassembly in sorted(misassemblies, \
-            key = lambda misassembly: (misassembly[0], int(misassembly[3]))):
+    misassemblies.sort(key = lambda misassembly: (misassembly[0], int(misassembly[3])))
+    for misassembly in misassemblies:
         summary_file.write('\t'.join(misassembly) + '\n')
     
     summary_file.close()
+
     results(options.output_dir + "/summary.gff")
 
+    # Find regions with multiple misassembly signatures.
+    suspicious_regions = find_suspicious_regions(misassemblies, options.min_suspicious_regions)
+    for region in suspicious_regions:
+        suspicious_file.write('\t'.join(region) + '\n')
+
+    results(options.output_dir + "/suspicious.gff")
 
     if options.email:
         notify_complete(options.email,time.time()-start_time)
@@ -163,7 +172,7 @@ def get_options():
             help="average mate pair insert sizes.")
     parser.add_option("-t", "--sigma" , dest="sigma", default = "18", \
             help="standard deviation of mate pair insert sizes.")
-    parser.add_option("-x", "--max_alignments", dest="max_alignments", default = "10000", \
+    parser.add_option("-x", "--max-alignments", dest="max_alignments", default = "10000", \
             help="bowtie2 parameter to set the max number of alignments.")
     parser.add_option("-e", "--email", dest="email", \
             help="Email to notify when job completes")
@@ -171,6 +180,9 @@ def get_options():
             help="Minimum average coverage to run misassembly detection.")
     parser.add_option("-l", "--coverage-multiplier", dest="coverage_multiplier", type=float, default=.1, \
             help="When binning by coverage, the new high = high + high * multiplier")
+    parser.add_option("-s", "--min-suspicious", dest="min_suspicious_regions", default=2, type=int, \
+            help="Minimum number of overlapping flagged miassemblies to mark region as suspicious.")
+
 
     (options, args) = parser.parse_args()
 
@@ -229,6 +241,96 @@ def warning(*objs):
 
 def error(*objs):
     print(bcolors.WARNING + "ERROR:\t" + bcolors.ENDC, *objs, file=sys.stderr)
+
+
+def find_suspicious_regions(misassemblies, min_cutoff = 2):
+    """
+    Given a list of miassemblies in gff format
+    """
+
+    regions =[]
+
+    for misassembly in misassemblies:
+        regions.append([misassembly[0], misassembly[3], 'START', misassembly[2]])
+        regions.append([misassembly[0], misassembly[4], 'END', misassembly[2]])
+
+    regions.sort(key = lambda region: (region[0], int(region[1])))
+
+    """
+    Example:
+
+    relocref        36601   START   Breakpoint_finder                                    
+    relocref        36801   END     Breakpoint_finder                                    
+    relocref        67968   START   REAPR
+    relocref        68054   START   REAPR
+    relocref        69866   END     REAPR
+    relocref        69867   START   REAPR
+    relocref        71833   END     REAPR
+    relocref        73001   START   Breakpoint_finder                                    
+    relocref        73201   END     Breakpoint_finder   
+    """
+
+    curr_contig = None
+    curr_index = 0
+    curr_length = -1
+
+    start_indexes = []
+    start_region = 0
+    end_index = 0
+    signatures = []
+    recording = False
+
+    signature_starts = defaultdict(list)
+
+    curr_coverage = 0
+    suspricious_regions = []
+
+    for region in regions:
+
+        if curr_contig is None:
+            curr_contig = region[0]
+            recording = False
+            signature_starts = defaultdict(list)
+
+        # We have found a new contig, process the previous contig results.
+        if region[0] != curr_contig:
+
+            curr_contig = region[0]
+            curr_length = contig_lengths[curr_contig]
+            recording = False
+
+        if region[2] == 'START':
+            curr_coverage += 1
+            if region[3] not in signatures: signatures.append(region[3])
+            signature_starts[region[3]].append(region[1])
+
+            # Record start point.
+            if curr_coverage == min_cutoff:
+                start_region = region[1]
+                recording == True
+
+            start_indexes.append(region[1])
+
+        else:
+            
+            curr_coverage -= 1
+
+            end_index = region[1]
+            if region[3] in signatures: signatures.remove(region[3]) 
+
+            # If we were recording, and min signatures drop belows threshold,
+            # then we need to output our results
+            if curr_coverage < min_cutoff and recording:
+                min_start = None
+
+                suspricious_regions.append([region[0], 'SUSPICIOUS', str(start_region), str(end_index), ','.join(signatures)])
+                signatures = []
+                recording = False
+
+        if curr_coverage >= min_cutoff:
+            recording = True
+
+    return suspricious_regions
 
 
 def calculate_contig_coverage(options, pileup_file):

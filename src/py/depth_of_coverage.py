@@ -2,18 +2,23 @@
 
 from __future__ import print_function
 from optparse import OptionParser
+import collections
+import copy
 import math
 import os
-import time
 import sys
+import time
+
 
 PROG_NAME = "DEPTH_COV"
+
 
 def setup_options():
     parser = OptionParser()
     parser.add_option("-a", "--abundance-file", dest="abundance_file", help="Assembler provided abundance file", metavar="FILE")
     parser.add_option("-m", "--mpileup-file", dest="mp_file_loc", help="mpileup output file", metavar="FILE")
-    parser.add_option("-o", "--output", dest="output_location", help="output location for depth of coverage tool", default="data/output/coverage/bad_bases.csv", metavar="FILE")
+    parser.add_option("-p", "--pileup-file", dest="pileup_filename", help="pileup file name", metavar="FILE")
+    parser.add_option("-o", "--output", dest="output_location", help="output location for depth of coverage tool", default=None, metavar="FILE")
     parser.add_option("-w", "--window-size", dest="window_size", help="window size to sweep over base pairs", type="int", default = 1)
     parser.add_option("-g", "--gff", dest="gff_format", default=False, action='store_true')
     parser.add_option("-e", "--empirical", dest="use_empirical", default=False, action='store_true')
@@ -22,8 +27,6 @@ def setup_options():
     (options,args) = parser.parse_args()
 
     should_quit = False
-    #if options.abundance_file == None:
-    #    parser.error("You failed to provide an abundance file")
     if options.mp_file_loc == None:
         parser.error("You failed to provide the mpileup file")
     if should_quit:
@@ -32,11 +35,14 @@ def setup_options():
 
     return (options,args)
 
+
 def warning(*objs):
     print("WARNING: ", *objs, file=sys.stderr)
 
+
 def debug(*objs):
     print("DEBUG: ", *objs, file=sys.stderr)
+
 
 def ensure_dir(f):
     d = os.path.dirname(f)
@@ -44,14 +50,16 @@ def ensure_dir(f):
         print("true")
         os.makedirs(d)
 
+
 def main():
     (options, args) = setup_options()
     abundance_file = options.abundance_file
     mpile_file = options.mp_file_loc
-    bad_cvg_dir = os.path.dirname(options.output_location)
-    bad_cvg_file = options.output_location
-    ensure_dir(bad_cvg_dir)
-
+    
+    if options.output_location:
+        ensure_dir(os.path.dirname(options.output_location))
+    bad_cvg_file = open(options.output_location,'w') if options.output_location else sys.stdout
+    
     window_size = options.window_size
 
     abundance_dict = {}
@@ -62,57 +70,73 @@ def main():
         # Calculate the coverage and window from the data itself.
         calculate_coverages(mpile_file, abundance_dict)
 
-    
-    with open(bad_cvg_file, 'w') as fp:
-        for grouping in read_mpileup(mpile_file, window_size):
-            check_grouping(grouping, abundance_dict, fp, 3, options.gff_format, options.use_empirical)
+    coverage_window = collections.deque(maxlen = window_size)
+    flagged_regions = []
+
+    prev_contig = None
+    lower_hinge = 0
+    upper_hinge = 0
+    end_pos = 0
+    region_index = -1
+
+    for line in open(mpile_file, 'r'):
+        fields = line.split()
+
+        # contig00001     1       A       1       ^~,     I
+        if prev_contig is None:
+            prev_contig = fields[0]
+            lower_hinge = abundance_dict[prev_contig][1]
+            upper_hinge = abundance_dict[prev_contig][2]
+            end_pos = 0
+
+        if prev_contig != fields[0]:
+            # Output previous results and clear deque.
+            coverage_window.clear()
+            prev_contig = fields[0]
+            lower_hinge = abundance_dict[prev_contig][1]
+            upper_hinge = abundance_dict[prev_contig][2]
+            end_pos = 0
+
+        # Append the bp coverage to the window.
+        coverage_window.append(int(fields[3]))
+        end_pos += 1
+
+        # If the coverage window is full, check and compare with median.
+        if len(coverage_window) >= window_size:
+            # TODO: Deepcopy is inefficient.
+            copy_window = sorted(copy.deepcopy(coverage_window))
+            median = copy_window[len(copy_window) / 2]
+            if not len(copy_window) % 2:
+                median = (copy_window[len(copy_window) / 2] + copy_window[len(copy_window) / 2 - 1]) / 2.0
+
+            if not in_range(median, lower_hinge, upper_hinge):
+                cov_type = "Low_coverage"
+                color = "#7800ef"
+                if median > upper_hinge:
+                    cov_type = "High_coverage"
+                    color = "#0077ee"
+
+                # Extend previous window?
+                if len(flagged_regions) > 0 and \
+                        flagged_regions[region_index][0] == prev_contig and \
+                        flagged_regions[region_index][2] == cov_type and \
+                        int(flagged_regions[region_index][4]) >= end_pos - len(coverage_window) + 1 and \
+                        int(flagged_regions[region_index][4]) <= end_pos:
+                    flagged_regions[region_index][4] = end_pos
+
+                else:
+                    flagged_regions.append(\
+                        [prev_contig, PROG_NAME, cov_type, end_pos - len(coverage_window) + 1, end_pos, median, lower_hinge, upper_hinge, color])
+                    region_index += 1
+ 
+    for region in flagged_regions:
+        bad_cvg_file.write("%s\t%s\t%s\t%d\t%d\t%f\t.\t.\tlow=%f;high=%f;color=%s\n" % (region[0], region[1], \
+                    region[2], region[3], region[4], region[5], region[6], region[7], region[8]))
 
 
 def in_range(num, low, high):
     return num >= low and num <= high
 
-def check_grouping(grouping, a_dict, fp, n_devs, gff_format, use_empirical):
-    #print(grouping)
-    cvg = 0.0
-    window_start = int(grouping[0][1])
-    window_end = int(grouping[-1][1])
-    win_size = 0.0
-    for group in grouping:
-        cvg += float(group[3])
-        win_size+=1.0
-
-    avg_contig_cvg = 0
-    if use_empirical:
-        avg_contig_cvg = float(a_dict[grouping[0][0]][0])
-    else:
-        avg_contig_cvg = float(a_dict[grouping[0][0]])
-
-    a_cvg = cvg / win_size
-
-    std_dev = avg_contig_cvg / 10.0
-    low = avg_contig_cvg - (std_dev * n_devs)
-    high = avg_contig_cvg + (std_dev * n_devs)
-
-    if use_empirical:
-        # Grab the lower and upper hinges.
-        low = a_dict[grouping[0][0]][1]
-        high = a_dict[grouping[0][0]][2]
-
-    if not in_range(a_cvg, low , high) :
-        if gff_format:
-            cov_type = "Low_coverage"
-            color = "#7800ef"
-            if a_cvg > high:
-                cov_type = "High_coverage"
-                color = "#0077ee"
-            fp.write("%s\t%s\t%s\t%d\t%d\t%f\t.\t.\tlow=%f;high=%f;color=%s\n" %(str(grouping[0][0]), PROG_NAME, \
-                cov_type, window_start, window_end, a_cvg, low, high, color))
-            
-        else:
-            fp.write("%s,%d,%d,%f,%f,%f\n" %(str(grouping[0][0]), window_start, \
-                window_end, a_cvg, low, high))
-
-        
 
 def read_abundances(fp, a_dict):
     fp = open(fp,'r')
@@ -175,41 +199,6 @@ def get_average_coverage(a_dict):
     var = reduce(lambda x, y: x + y, variances)/ len(variances)
     std = math.sqrt(var)
     return (mean, var, std)
-
-def read_mpileup(fp, ws=1):
-    fp = open(fp, 'r')
-    last_contig = None
-    save_line = None
-    while True:
-        line_bundle = []
-        ret_bundle = []
-        last_contig = None
-
-        start_range = 0
-        if save_line:
-            start_range = 1
-            line_bundle.append(save_line)
-            save_line = None
-
-        for i in range(start_range,ws):
-            line_bundle.append(fp.readline())
-        for line in line_bundle:
-            if line:
-                split_line = line.split()
-                if last_contig and split_line[0] != last_contig:
-                    save_line = line
-                else:
-                    last_contig = split_line[0]
-                ret_bundle.append(split_line)
-        if len(ret_bundle) == 0:
-            break
-        yield ret_bundle
-    
-
-def factorial(n):
-    """ Return factorial using Stirling's approximation. """
-
-    return math.sqrt(2 * math.pi * n) * (n / math.e) ** n
 
 
 if __name__ == '__main__':

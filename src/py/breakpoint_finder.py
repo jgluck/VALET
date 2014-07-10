@@ -13,6 +13,8 @@ class BreakpointFinder:
         self.assembly_file = None
         self.singleton_halves = []
         self.read_lengths = {}
+        self.bin_contents = {}
+        self.surviving_bins = []
         self.getOptions()
         self.base_path = os.path.dirname(sys.argv[0])[:-len("/src/py")]
         self.set_locations()
@@ -47,6 +49,8 @@ class BreakpointFinder:
                 + "collapsed_breakpoints.csv"
         self.bins_of_interest_file = self.breakpoint_dir + "interesting_bins.gff"
         self.meta_file = self.breakpoint_dir + "meta_data.data"
+
+        self.bin_contents_file = self.breakpoint_dir + "bin_contents.contents"
 
     def run_bowtie_index(self):
         FNULL = open('/dev/null', 'w')
@@ -94,6 +98,30 @@ class BreakpointFinder:
                             self.w_s = self.w_e
                             self.w_e = self.w_s + self.bin_size
                         out_file.write(match.strip()+('\t%s\n'%(self.w_s)))
+                        self.add_to_bin_contents(match_split[0]+"\t"+str(self.w_s), match.strip())
+
+    def add_to_bin_contents(self, key, half_id):
+        if key not in self.bin_contents.keys():
+            self.bin_contents[key] = [half_id]
+        else:
+            self.bin_contents[key].append(half_id)
+
+    def output_bin_contents(self, only_surviving = False):
+        with open(self.bin_contents_file,'w') as b_c_file:
+            for bin in self.bin_contents.keys():
+                if only_surviving:
+                    if bin in self.surviving_bins:
+                        b_c_file.write(bin + "\n")
+                        for content in self.bin_contents[bin]:
+                            b_c_file.write(content + "\t")
+                        b_c_file.write("\n")
+                else:
+                    b_c_file.write(bin + "\n")
+                    for content in self.bin_contents[bin]:
+                        b_c_file.write(content + "\t")
+                    b_c_file.write("\n")
+
+
 
     def collapse_bins(self):
         call_str = "awk '{printf \"%%s\\t%%s\\n\",$1,$6}' %s | sort | uniq -c > %s" %(self.binned_breakpoint_file, self.collapsed_breakpoint_file)
@@ -135,6 +163,7 @@ class BreakpointFinder:
                                     float(std_dev),\
                                     float(split_line[0]),\
                                     color))
+                            self.surviving_bins.append(split_line[1] + "\t" + split_line[2])
         with open(self.meta_file, 'w') as meta_f:
             meta_f.write("Avg bin size: %f\nStd_Dev: %f\nCutoff: %f\n"\
                     % (float(avg_bin_size), float(std_dev), float(cutoff))) 
@@ -216,6 +245,7 @@ class BreakpointFinder:
         self.bin_breakpoints()
         self.collapse_bins()
         self.trim_bins()
+        self.output_bin_contents(True)
     
     def getOptions(self):
         parser = OptionParser()

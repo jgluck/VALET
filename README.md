@@ -1,4 +1,4 @@
-#MetValidate
+#Valet
 
 Pipeline for evaulating metagenomic assemblies.
 

@@ -69,7 +69,7 @@ class BreakpointFinder:
                 warning("Skipping potential read file: " + file_name)
 
     def sort_breakpoints(self):
-        call_arr = ["sort", "-t\t", '-k 1n,1', '-k 2n,2', '-k 5n,5', self.breakpoint_file]
+        call_arr = ["sort", '-T ./', "-t\t", '-k 1n,1', '-k 2n,2', '-k 5n,5', self.breakpoint_file]
         out_cmd(call_arr)
         out_file = open(self.sorted_breakpoint_file, 'w')
         warning("This call outputs to file: ", self.sorted_breakpoint_file)
@@ -96,7 +96,7 @@ class BreakpointFinder:
                         out_file.write(match.strip()+('\t%s\n'%(self.w_s)))
 
     def collapse_bins(self):
-        call_str = "awk '{printf \"%%s\\t%%s\\n\",$1,$6}' %s | sort | uniq -c > %s" %(self.binned_breakpoint_file, self.collapsed_breakpoint_file)
+        call_str = "awk '{printf \"%%s\\t%%s\\n\",$1,$6}' %s | sort -T ./| uniq -c > %s" %(self.binned_breakpoint_file, self.collapsed_breakpoint_file)
         out_cmd(call_str)
         call(call_str,shell=True)
 

@@ -6,6 +6,7 @@ from optparse import OptionParser
 from tempfile import mkstemp
 import os
 import random
+import re
 import shlex
 import shutil
 import subprocess
@@ -50,8 +51,17 @@ def main():
     input_fasta_saved = options.fasta_file
     output_dir_saved = options.output_dir
     
+    if options.min_contig_length > 0:
+        step("FILTERING ASSEMBLY CONTIGS LESS THAN " + str(options.min_contig_length) + ' BPs')
+        filter_short_contigs(options)
+        results(options.fasta_file)
+        fasta_file = options.fasta_file
+        input_fasta_saved = options.fasta_file
+
     step("ALIGNING READS")
     unaligned_dir = run_bowtie2(options, sam_output_location)
+
+    contig_lengths = get_contig_lengths(sam_output_location)
 
     step("RUNNING SAMTOOLS")
     bam_location, sorted_bam_location, pileup_file = \
@@ -97,7 +107,7 @@ def main():
         
         step("RUNNING SAMTOOLS ON COVERAGE BIN " + coverages)
         bam_location, sorted_bam_location, pileup_file = \
-                run_samtools(options, sam_output_location)
+                run_samtools(options, sam_output_location, with_pileup=False)
 
         #step("DEPTH OF COVERAGE")
         #error_files.append(run_depth_of_coverage(options, pileup_file))
@@ -124,7 +134,11 @@ def main():
     # Sort misassemblies by start site.
     misassemblies.sort(key = lambda misassembly: (misassembly[0], int(misassembly[3])))
     for misassembly in misassemblies:
-        summary_file.write('\t'.join(misassembly) + '\n')
+
+        # Don't print a flagged region if it occurs near the ends of the contig.
+        if int(misassembly[3]) > options.ignore_end_distances and \
+                int(misassembly[4]) < (contig_lengths[misassembly[0]] - options.ignore_end_distances):
+            summary_file.write('\t'.join(misassembly) + '\n')
     
     summary_file.close()
 
@@ -133,7 +147,9 @@ def main():
     # Find regions with multiple misassembly signatures.
     suspicious_regions = find_suspicious_regions(misassemblies, options.min_suspicious_regions)
     for region in suspicious_regions:
-        suspicious_file.write('\t'.join(region) + '\n')
+        if int(region[3]) > options.ignore_end_distances and \
+                int(region[4]) <= (contig_lengths[region[0]] - options.ignore_end_distances):
+            suspicious_file.write('\t'.join(region) + '\n')
 
     results(options.output_dir + "/suspicious.gff")
 
@@ -182,7 +198,10 @@ def get_options():
             help="When binning by coverage, the new high = high + high * multiplier")
     parser.add_option("-s", "--min-suspicious", dest="min_suspicious_regions", default=2, type=int, \
             help="Minimum number of overlapping flagged miassemblies to mark region as suspicious.")
-
+    parser.add_option('-z', "--min-contig-length", dest="min_contig_length", default=1000, type=int, \
+            help="Ignore contigs smaller than this length.")
+    parser.add_option('-b', "--ignore-ends", dest="ignore_end_distances", default=0, type=int, \
+            help="Ignore flagged regions within b bps from the ends of the contigs.")    
 
     (options, args) = parser.parse_args()
 
@@ -243,6 +262,48 @@ def error(*objs):
     print(bcolors.WARNING + "ERROR:\t" + bcolors.ENDC, *objs, file=sys.stderr)
 
 
+def filter_short_contigs(options):
+    """
+    Filter out contigs less than a certain length.
+    """
+
+    filtered_fasta_filename = options.output_dir + '/filtered_assembly.fasta'
+    filtered_assembly_file = open(filtered_fasta_filename, 'w')
+
+    with open(options.fasta_file,'r') as assembly:
+        for contig in contig_reader(assembly):
+            if len(''.join(contig['sequence'])) >= options.min_contig_length:
+                filtered_assembly_file.write(contig['name'])
+                filtered_assembly_file.writelines(contig['sequence'])
+
+    filtered_assembly_file.close()
+    options.fasta_file = filtered_fasta_filename
+
+
+def get_contig_lengths(sam_filename):
+    """
+    Return a dictionary of contig names => contig lengths from a SAM file.
+    """
+
+    sam_file = open(sam_filename, 'r')
+
+    # Build dictionary of contig lengths.
+    contig_lengths = {}
+    pattern = re.compile('SN:(?P<contig>[\w_\|\.]+)\s*LN:(?P<length>\d+)')
+    line = sam_file.readline()
+    while line.startswith("@"):
+
+        if line.startswith("@SQ"):
+            matches = pattern.search(line)
+            
+            if len(matches.groups()) == 2:
+                contig_lengths[matches.group('contig')] = int(matches.group('length'))
+
+        line = sam_file.readline()
+
+    return contig_lengths
+
+
 def find_suspicious_regions(misassemblies, min_cutoff = 2):
     """
     Given a list of miassemblies in gff format
@@ -283,7 +344,7 @@ def find_suspicious_regions(misassemblies, min_cutoff = 2):
     signature_starts = defaultdict(list)
 
     curr_coverage = 0
-    suspricious_regions = []
+    suspicious_regions = []
 
     for region in regions:
 
@@ -296,7 +357,6 @@ def find_suspicious_regions(misassemblies, min_cutoff = 2):
         if region[0] != curr_contig:
 
             curr_contig = region[0]
-            curr_length = contig_lengths[curr_contig]
             recording = False
 
         if region[2] == 'START':
@@ -323,14 +383,33 @@ def find_suspicious_regions(misassemblies, min_cutoff = 2):
             if curr_coverage < min_cutoff and recording:
                 min_start = None
 
-                suspricious_regions.append([region[0], 'SUSPICIOUS', str(start_region), str(end_index), ','.join(signatures)])
+                suspicious_regions.append([region[0], '.', 'SUSPICIOUS', str(start_region), str(end_index), '.', '.', '.', 'color=#181009;' + ','.join(signatures)])
                 signatures = []
                 recording = False
 
         if curr_coverage >= min_cutoff:
             recording = True
 
-    return suspricious_regions
+    # Hack to correct for overlapping suspicious regions.
+    compressed_suspicious_regions = []
+
+    prev_region = None
+    for region in suspicious_regions:
+
+        if prev_region is None:
+            prev_region = region
+        else:
+            if prev_region[0] == region[0] and int(prev_region[4]) >= int(region[3]):
+                prev_region[4] = region[4]
+            else:
+                compressed_suspicious_regions.append(prev_region)
+                prev_region = region
+
+
+    if prev_region:
+        compressed_suspicious_regions.append(prev_region)
+
+    return compressed_suspicious_regions
 
 
 def calculate_contig_coverage(options, pileup_file):
@@ -437,6 +516,7 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
     out_cmd([command])
 
     ignore = open('/dev/null', 'w')
+    #call(command.split())
     args = shlex.split(command) 
     bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=ignore)
     bowtie_output, err = bowtie_proc.communicate()
@@ -623,7 +703,7 @@ def run_lap(options, sam_output_location, reads_trimmed_location):
     results(output_sum_probs_location)
 
 
-def run_samtools(options, sam_output_location):
+def run_samtools(options, sam_output_location, with_pileup = True):
     """ Takes a sam file and runs samtools to create bam, sorted bam, and mpileup. """
 
     bam_dir = options.output_dir + "/bam/"
@@ -649,11 +729,13 @@ def run_samtools(options, sam_output_location):
     ensure_dir(coverage_file_dir)
     pileup_file = coverage_file_dir + "mpileup_output.out"
     p_fp = open(pileup_file, 'w')
-    call_arr = [os.path.join(base_path, "bin/Reapr_1.0.17/src/samtools"), "mpileup", "-A", "-f", options.fasta_file, sorted_bam_location + ".bam"]
-    out_cmd(call_arr)
-    results(pileup_file)
-    #warning("That command outputs to file: ", pileup_file)
-    call(call_arr, stdout = p_fp, stderr = FNULL)
+
+    if with_pileup:
+        call_arr = [os.path.join(base_path, "bin/Reapr_1.0.17/src/samtools"), "mpileup", "-A", "-f", options.fasta_file, sorted_bam_location + ".bam"]
+        out_cmd(call_arr)
+        results(pileup_file)
+        #warning("That command outputs to file: ", pileup_file)
+        call(call_arr, stdout = p_fp, stderr = FNULL)
 
     return (bam_location, sorted_bam_location, pileup_file)
 

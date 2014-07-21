@@ -27,13 +27,13 @@ def main():
 
     # Build dictionary of contig lengths.
     contig_lengths = {}
-    pattern = re.compile('SN:(?P<contig>\w+)\s*LN:(?P<length>\d+)')
+    pattern = re.compile('SN:(?P<contig>[\w_\|\.]+)\s*LN:(?P<length>\d+)')
     line = sam_file.readline()
     while line.startswith("@"):
 
         if line.startswith("@SQ"):
             matches = pattern.search(line)
-
+            
             if len(matches.groups()) == 2:
                 contig_lengths[matches.group('contig')] = int(matches.group('length'))
 

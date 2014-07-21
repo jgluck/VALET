@@ -494,13 +494,19 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
         read_type = " -q "
     
     bowtie2_args = ""
+    bowtie2_unaligned_check_args = ""
     if options.first_mates:
         bowtie2_args = "-a -x " + assembly_index + " -1 " + options.first_mates\
                 + " -2 " + options.second_mates + " -p " + options.threads\
                 + " --very-sensitive -a " + " --reorder --"\
                 + options.orientation + " -I " + options.min_insert_size\
-                + " -X " + options.max_insert_size + " --un-conc "\
-                + unaligned_file
+                + " -X " + options.max_insert_size #+ " --un-conc "\
+                #+ unaligned_file
+        
+        bowtie2_unaligned_check_args = "-a -x " + assembly_index + read_type + " -U "\
+                + options.first_mates + "," + options.second_mates + " --very-sensitive -a "\
+                + " --reorder -p " + options.threads + " --un " + unaligned_file
+ 
     else:
         bowtie2_args = "-a -x " + assembly_index + read_type + " -U "\
                 + options.reads_filenames + " --very-sensitive -a "\
@@ -515,12 +521,22 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
     
     out_cmd([command])
 
+
     ignore = open('/dev/null', 'w')
     #call(command.split())
     args = shlex.split(command) 
     bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=ignore)
     bowtie_output, err = bowtie_proc.communicate()
-    
+ 
+
+
+    if bowtie2_unaligned_check_args != "":
+        command = os.path.join(base_path, "bin/bowtie2-2.2.2/bowtie2 ") + bowtie2_unaligned_check_args + " -S " + output_sam + "_2.sam"
+        out_cmd([command])
+        args = shlex.split(command)
+        bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+        bowtie_output, err = bowtie_proc.communicate()
+
     return unaligned_dir
 
 
@@ -528,18 +544,21 @@ def run_breakpoint_finder(options,unaligned,breakpoint_dir):
     '''
     attempts to find breakpoints
     '''
+    std_err_file = open(breakpoint_dir + 'splitter_std_err.log', 'w')
     call_arr = [os.path.join(base_path,'src/py/breakpoint_splitter.py'),\
             '-u', unaligned,\
             '-o', breakpoint_dir + 'split_reads/']
 
     out_cmd(call_arr)
-    call(call_arr)
+    call(call_arr, stderr=std_err_file)
+    std_err_file.close()
     
     std_err_file = open(breakpoint_dir + 'std_err.log','w')
     call_arr = [os.path.join(base_path, 'src/py/breakpoint_finder.py'),\
             '-a', options.fasta_file,\
             '-r', breakpoint_dir + 'split_reads/',\
-            '-b 200', '-o', breakpoint_dir]
+            '-b 45', '-o', breakpoint_dir,\
+            '-c', options.coverage_file]
     out_cmd(call_arr)
     call(call_arr,stderr=std_err_file)
     results(breakpoint_dir + 'interesting_bins.gff')

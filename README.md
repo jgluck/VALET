@@ -1,7 +1,7 @@
 #VALET
-
 Pipeline for evaulating metagenomic assemblies.
 
+## Installing VALET
 Once the repository has been cloned, to install the required tools run the command:
 ```
 git clone https://github.com/jgluck/VALET.git
@@ -36,7 +36,8 @@ RESULTS:         test_validate/suspicious.gff
 
 ```
 
-The summary of misassemblies are stored in [GFF format](http://www.sanger.ac.uk/resources/software/gff/spec.html):
+The flagged regions (potential misassemblies) are stored in two files **[OUTPUT_DIR]/summary.gff** and **[OUTPUT_DIR]/suspicious.gff**.
+The flagged regions are stored in [GFF format](http://www.sanger.ac.uk/resources/software/gff/spec.html).  If multiple misassembly signatures overlap, their intersection is written to **suspicious.gff**.
 
 ```
 contig00001     REAPR   Read_orientation        88920   97033   .       .       .       Note=Warning: Bad read orientation;colour=1
@@ -50,6 +51,17 @@ contig00001     REAPR   Read_orientation        134218  135390  .       .       
 contig00001     REAPR   Frag_cov        134757  134882  0.00793651      .       .       Note=Error: Fragment coverage too low;color=15
 contig00001     REAPR   Read_orientation        135392  136654  .       .       .       Note=Warning: Bad read orientation;colour=1
 ```
+## Example usages
+
+* I have a pair-end FASTQ library.  I want to ignore misassemblies found in contigs smaller than 1000bp, and contigs with less than 10x coverage.
+
+```
+$VALET/pipeline.py -a [ASSEMBLY_FASTA] -q -1 [FIRST_MATES] -2 [SECOND_MATES] \
+    --min-contig-length 1000 \
+    --min-coverage 10 \
+    -o [OUTPUT_DIR]
+```
+
 
 ## Tutorial: Finding misassemblies in the Human Microbiome Project
 
@@ -99,7 +111,7 @@ cd ..
 
 ```
 $VALET/pipeline.py -a $HMP_SAMPLE/SRS014465.scaffolds.fa \
-    -1 $HMP_SAMPLE/SRS014465.denovo_duplicates_marked.trimmed.1.fastq \
+    -q -1 $HMP_SAMPLE/SRS014465.denovo_duplicates_marked.trimmed.1.fastq \
     -2 $HMP_SAMPLE/SRS014465.denovo_duplicates_marked.trimmed.2.fastq \
     -o SRS014465_valet \
     --window-size 100 --min-coverage 10 --coverage-multiplier 0.0 --threads 32 \
@@ -125,6 +137,60 @@ STEP:    ALIGNING READS
 ```
 
 ### Investigating potential misassemblies using IGV
+TODO
 
+## Options
+```
+$VALET/pipeline.py -h
+
+Options:
+  -h, --help            show this help message and exit
+  -a FILE, --assembly-fasta=FILE
+                        Candidate assembly file
+  -r FILE, --reads=FILE
+                        First Read File
+  -1 FIRST_MATES, --1=FIRST_MATES
+                        Fastq filenames separated by commas that contain the
+                        first mates.
+  -2 SECOND_MATES, --2=SECOND_MATES
+                        Fastq filenames separated by commas that contain the
+                        second mates.
+  -c COVERAGE_FILE, --coverage-file=COVERAGE_FILE
+                        Assembly created per-contig coverage file
+  -o OUTPUT_DIR, --output-dir=OUTPUT_DIR
+                        Output directory
+  -w WINDOW_SIZE, --window-size=WINDOW_SIZE
+                        Sliding window size when determining misassemblies.
+  -q, --fastq           if set, input reads are fastq format (fasta by
+                        default).
+  -p THREADS, --threads=THREADS
+                        Number of threads
+  -I MIN_INSERT_SIZE, --minins=MIN_INSERT_SIZE
+                        Min insert sizes for mate pairs separated by commas.
+  -X MAX_INSERT_SIZE, --maxins=MAX_INSERT_SIZE
+                        Max insert sizes for mate pairs separated by commas.
+  -n ORIENTATION, --orientation=ORIENTATION
+                        Orientation of the mates.
+  -m MU, --mu=MU        average mate pair insert sizes.
+  -t SIGMA, --sigma=SIGMA
+                        standard deviation of mate pair insert sizes.
+  -x MAX_ALIGNMENTS, --max-alignments=MAX_ALIGNMENTS
+                        bowtie2 parameter to set the max number of alignments.
+  -e EMAIL, --email=EMAIL
+                        Email to notify when job completes
+  -g MIN_COVERAGE, --min-coverage=MIN_COVERAGE
+                        Minimum average coverage to run misassembly detection.
+  -l COVERAGE_MULTIPLIER, --coverage-multiplier=COVERAGE_MULTIPLIER
+                        When binning by coverage, the new high = high + high *
+                        multiplier
+  -s MIN_SUSPICIOUS_REGIONS, --min-suspicious=MIN_SUSPICIOUS_REGIONS
+                        Minimum number of overlapping flagged miassemblies to
+                        mark region as suspicious.
+  -z MIN_CONTIG_LENGTH, --min-contig-length=MIN_CONTIG_LENGTH
+                        Ignore contigs smaller than this length.
+  -b IGNORE_END_DISTANCES, --ignore-ends=IGNORE_END_DISTANCES
+                        Ignore flagged regions within b bps from the ends of
+                        the contigs.
+```
 
 

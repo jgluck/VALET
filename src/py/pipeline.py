@@ -534,7 +534,7 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
         command = os.path.join(base_path, "bin/bowtie2-2.2.2/bowtie2 ") + bowtie2_unaligned_check_args + " -S " + output_sam + "_2.sam"
         out_cmd([command])
         args = shlex.split(command)
-        bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+        bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=ignore)
         bowtie_output, err = bowtie_proc.communicate()
 
     return unaligned_dir

@@ -155,8 +155,6 @@ class BreakpointFinder:
                 avg_coverage_in_bin[split_l[1] + "\t" + split_l[2]] = self.contig_coverage[split_l[1]]
                 if (2*ave_read_len * num_matches_in_bin) / self.bin_size >= avg_coverage_in_bin[split_l[1] + "\t" + split_l[2]]/4.0:
                     self.surviving_bins.append(split_l[1] + "\t" + split_l[2])
-                #if num_matches_in_bin > ((ave_read_len) * avg_coverage_in_bin[split_l[1]+"\t"+split_l[2]])/6:
-                #    self.surviving_bins.append(split_l[1] + "\t" + split_l[2])
                 else:
                     warning("Removing bin: %s because eq matches: %f < cutoff: %f" % (split_l[1]+"\t"+split_l[2], (2* ave_read_len*num_matches_in_bin)/float(self.bin_size), avg_coverage_in_bin[split_l[1] + "\t" + split_l[2]]/4.0))
         warning("Surviving bins assembled: %d surviving bins." % (len(self.surviving_bins)))
@@ -199,13 +197,13 @@ class BreakpointFinder:
                                         % (current_key, str(b_c_d_r.keys)))
                             for key in b_c_d_r[current_key].keys():
                                 num_sisters += len(b_c_d_r[current_key][key])
-                            if num_sisters < 5:
-                                warning("Skipping bin: %s because number of sisters: %d was low" % (current_key, num_sisters))
-                                continue
+                            #if num_sisters < 5:
+                            #    warning("Skipping bin: %s because number of sisters: %d was low" % (current_key, num_sisters))
+                            #    continue
                             rec = find_reciprical_pair(b_c_d_r, current_key)
-                            if rec == None:
-                                warning("No Reciprical for bin: %s so skipping" % (current_key))
-                                continue
+                            #if rec == None:
+                            #    warning("No Reciprical for bin: %s so skipping" % (current_key))
+                            #    continue
                             out_file.write("%s\tBreakpoint_finder\
                                     \tBreakpoint_Finder_excessive_alignment\
                                     \t%d\t%d\t%d\t.\t.\t\
@@ -218,7 +216,7 @@ class BreakpointFinder:
                                     float(split_line[0]),\
                                     color,\
                                     num_sisters,\
-                                    rec))
+                                    str(rec)))
 
 
 

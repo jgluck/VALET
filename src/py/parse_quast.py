@@ -70,7 +70,7 @@ def get_misassemblies_from_quast(quast_filename):
                         found_misassembly = False
                         type_misassembly = 'local'
 
-                if 'misassembly' in line:
+                if 'misassembly' in line and not 'Fake' in line:
                     found_misassembly = True
                     if 'Extensive' in line:
                         type_misassembly = 'extensive'

@@ -478,7 +478,7 @@ def generate_summary_table(table_filename, all_contig_lengths, filtered_contig_l
     reapr = 0
     reapr_bps = 0
     breakpoints = 0
-    breakpoints_bp = 0
+    breakpoints_bps = 0
 
     processed_contigs = set()
 
@@ -499,7 +499,7 @@ def generate_summary_table(table_filename, all_contig_lengths, filtered_contig_l
             table_file.write(prev_contig + '\t' + str(filtered_contig_lengths[prev_contig]) + '\t' + \
                 str(low_coverage) + '\t' + str(low_coverage_bps) + '\t' + str(high_coverage) + '\t' + \
                 str(high_coverage_bps) + '\t' + str(reapr) + '\t' + str(reapr_bps) + '\t' + str(breakpoints) + '\t' + \
-                str(breakpoints_bp) + '\n')
+                str(breakpoints_bps) + '\n')
 
             processed_contigs.add(prev_contig)
 
@@ -540,7 +540,7 @@ def generate_summary_table(table_filename, all_contig_lengths, filtered_contig_l
         table_file.write(prev_contig + '\t' + str(filtered_contig_lengths[prev_contig]) + '\t' + \
             str(low_coverage) + '\t' + str(low_coverage_bps) + '\t' + str(high_coverage) + '\t' + \
             str(high_coverage_bps) + '\t' + str(reapr) + '\t' + str(reapr_bps) + '\t' + str(breakpoints) + '\t' + \
-            str(breakpoints_bp) + '\n')
+            str(breakpoints_bps) + '\n')
 
         processed_contigs.add(prev_contig)
 

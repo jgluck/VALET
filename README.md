@@ -145,7 +145,32 @@ STEP:    ALIGNING READS
 ```
 
 ### Investigating potential misassemblies using IGV
-TODO
+Any genomics viewer that supports FASTA, BAM, and GFF formats should be able to display the flagged misassemblies.  For this example, we will use Broad's IGV(http://www.broadinstitute.org/software/igv/download#binary).
+
+```
+# Download and install IGV
+wget http://www.broadinstitute.org/igv/projects/downloads/IGV_2.3.34.zip
+unzip IGV_2.3.34.zip
+export IGV_PATH=`pwd`/IGV_2.3.34
+```
+
+Next, create a file containing the IGV batch parameters below (*this will be automated in a future releases!*):
+
+```
+echo "new
+genome filtered_assembly.fasta
+load summary.gff
+load suspicious.gff
+load bam/sorted_library.bam" > SRS014465_valet/IGV.batch
+```
+
+In order to view the assembly and flagged regions, change the directory to the SRS014465 VALET directory and run:
+```
+cd SRS014465_valet/
+$IGV_PATH/igv.sh -b IGV.batch
+```
+
+Now you are free to explore the flagged regions!
 
 ## Options
 ```

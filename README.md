@@ -37,6 +37,16 @@ RESULTS:         test_validate/summary.tsv
 
 ```
 
+Please note, if REAPR throws an error, then you need to install the following PERL libraries:
+* File::Basename
+* File::Copy
+* File::Spec
+* File::Spec::Link
+* Getopt::Long
+* List::Util
+
+In the future, we will automate this process, but please bear with us in the meantime.
+
 The flagged regions (potential misassemblies) are stored in two files **[OUTPUT_DIR]/summary.gff** and **[OUTPUT_DIR]/suspicious.gff**.
 The flagged regions are stored in [GFF format](http://www.sanger.ac.uk/resources/software/gff/spec.html).  If multiple misassembly signatures overlap, their intersection is written to **suspicious.gff**.
 

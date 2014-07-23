@@ -33,6 +33,7 @@ STEP:    ALIGNING READS
 STEP:    SUMMARY
 RESULTS:         test_validate/summary.gff
 RESULTS:         test_validate/suspicious.gff
+RESULTS:         test_validate/summary.tsv
 
 ```
 
@@ -51,6 +52,14 @@ contig00001     REAPR   Read_orientation        134218  135390  .       .       
 contig00001     REAPR   Frag_cov        134757  134882  0.00793651      .       .       Note=Error: Fragment coverage too low;color=15
 contig00001     REAPR   Read_orientation        135392  136654  .       .       .       Note=Warning: Bad read orientation;colour=1
 ```
+
+In addition, a breakdown of each contig's number of misassemblies is available in the **[OUTPUT_DIR]/summary.tsv** file:
+
+```
+contig_name     contig_length   low_cov low_cov_bps     high_cov        high_cov_bps    reapr   reapr_bps       breakpoints     breakpoints_bps
+contig00001     160502  1       4421    0       0       9       23879   3       103
+```
+
 ## Example usages
 
 * I have a pair-end FASTQ library.  I want to ignore misassemblies found in contigs smaller than 1000bp, and contigs with less than 10x coverage.
@@ -114,14 +123,13 @@ $VALET/pipeline.py -a $HMP_SAMPLE/SRS014465.scaffolds.fa \
     -q -1 $HMP_SAMPLE/SRS014465.denovo_duplicates_marked.trimmed.1.fastq \
     -2 $HMP_SAMPLE/SRS014465.denovo_duplicates_marked.trimmed.2.fastq \
     -o SRS014465_valet \
-    --window-size 100 --min-coverage 10 --coverage-multiplier 0.0 --threads 32 \
+    --window-size 100 --min-coverage 10 --threads 32 \
     --ignore-ends 100 --min-contig-length 1000
 ```
 
 Lets take a closer look at the parameters we've selected:
 * **-window-size 100** sets the sliding window size to be 100bp.
 * **--min-coverage 10** sets the minimum contig coverage to 10x.  Any contig with less than a median contig coverage of 10x will not be flagged for misassemblies.
-* **--coverage-multiplier 0.0** contigs are binned by exponentially increasing the bin size. At each new iteration, low = previous high, and high = high * coverage_multiplier. If coverage-multiplier is 0, each contig is binned with contigs sharing the same whole number.
 * **--threads 32** sets the threads to 32. 
 * **--ignore-ends 100** any flagged region within 100bp of the ends of a contig will be ignored.
 * **--min-contig-length 1000** will have VALET ignore any flagged regions on contigs smaller than 1000bp.

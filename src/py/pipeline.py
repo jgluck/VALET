@@ -706,7 +706,8 @@ def run_breakpoint_finder(options,unaligned,breakpoint_dir):
             '-a', options.fasta_file,\
             '-r', breakpoint_dir + 'split_reads/',\
             '-b', options.breakpoints_bin, '-o', breakpoint_dir,\
-            '-c', options.coverage_file]
+            '-c', options.coverage_file,\
+            '-p', options.threads]
     out_cmd(call_arr)
     call(call_arr,stderr=std_err_file)
     results(breakpoint_dir + 'interesting_bins.gff')

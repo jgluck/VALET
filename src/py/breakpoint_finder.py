@@ -77,7 +77,7 @@ class BreakpointFinder:
                          '-S', self.sam_output_dir + file_name + '.sam',\
                          '--un', self.singleton_dir + file_name + '.singletons',\
                          '--al', self.conc_dir + file_name + '.reads',
-                         '-q', '-I 50' , '-X 800', '-p 10', '--mp 6']
+                         '-q', '-I 50' , '-X 800', '-p', str(self.options.threads), '--mp 6']
                 #out_cmd(call_arr)
                 call(call_arr)
             else:
@@ -389,6 +389,8 @@ class BreakpointFinder:
         parser.add_option("-t", "--trim", dest="end_trim", \
                 help="Percentage of seq to trim", metavar="PERCENT", \
                 default="10", type="int")
+        parser.add_option("-p", "--threads", dest="threads", \
+                help="Number of threads", default=10, type="int")
         (options, args) = parser.parse_args()
         self.options = options
         if options.reads:

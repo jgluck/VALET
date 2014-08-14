@@ -91,6 +91,7 @@ class BreakpointFinder:
         call(call_arr, stdout=out_file)
 
     def bin_breakpoints(self):
+        warning("About to start binning breakpoints")
         with open(self.sorted_breakpoint_file,'r') as breakpoints,\
                 open(self.binned_breakpoint_file,'w') as out_file:
             for contig_bundle in self.read_contig(breakpoints):
@@ -112,6 +113,7 @@ class BreakpointFinder:
                             self.w_e = self.w_s + self.bin_size
                         out_file.write(match.strip()+('\t%s\n'%(self.w_s)))
                         self.add_to_bin_contents(match_split[0]+"\t"+str(self.w_s), match.split()[2])
+        warning("Done binning contigs")
 
     def add_to_bin_contents(self, key, half_id):
         if key not in self.bin_contents.keys():
@@ -169,9 +171,11 @@ class BreakpointFinder:
             if key in self.surviving_bins:
                 b_c_d_r[key] = {}
                 for key_2 in self.surviving_bins:
-                    #b_c_d_r[key][key_2] = [val for val in self.bin_contents[key] if find_sister(val) in [read_name.split()[2] for read_name in self.bin_contents[key_2]]]
+                    if key_2 in b_c_d_r.keys() and key in b_c_d_r[key_2].keys():
+                        b_c_d_r[key][key_2] = b_c_d_r[key_2][key]
+                        continue
                     b_c_d_r[key][key_2] = [val for val in self.bin_contents[key] if find_sister(val) in self.bin_contents[key_2]]
-        warning("Assembled that dictionary")
+        warning("Assembled that dictionary size: %d" % (sys.getsizeof(b_c_d_r)))
 
 
         warning("About to output some reciprocals")

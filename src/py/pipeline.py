@@ -12,9 +12,11 @@ import shutil
 import subprocess
 import sys
 import time
+import resource
 
 FNULL = open('/dev/null', 'w')
 base_path = os.path.dirname(sys.argv[0])[:-len('src/py/')]
+file_limit = resource.getrlimit(resource.RLIMIT_NOFILE)[1] 
 
 class bcolors:
     HEADER = '\033[95m'
@@ -35,7 +37,9 @@ def main():
     
     reads_untrimmed_location = [options.first_mates, options.second_mates]
     reads_trimmed_location = []
-    
+ 
+    shell_file = options.output_dir + "/commands.sh"
+
     sam_output_location_dir = options.output_dir + "/sam/"
     sam_output_location = sam_output_location_dir + "library.sam"
     
@@ -44,7 +48,11 @@ def main():
 
     ensure_dir(sam_output_location_dir)
     ensure_dir(singleton_output_dir)
-    
+ 
+    global shell_file_fp
+    shell_file_fp = open(shell_file, 'w')
+    setup_shell_file()
+
     bins_dir = options.output_dir + "/bins/"
     ensure_dir(bins_dir)
  
@@ -273,6 +281,10 @@ def notify_complete(target_email,t):
     call(['echo "Completed in %d" | mail -s "Job Completed" %s' % (t, target_email) ],shell=True)
 
 
+def setup_shell_file():
+    if shell_file_fp:
+        shell_file_fp.write("#!/bin/bash\n")
+
 def line(x):
     print ("-"*x, file=sys.stderr)
 
@@ -280,8 +292,19 @@ def step(*objs):
     line(75)
     print(bcolors.HEADER + "STEP:\t" + bcolors.ENDC, *objs, file=sys.stderr)
 
-def out_cmd(*objs):
+def out_cmd(std_out = "", std_err = "", *objs):
     #line(75)
+    if shell_file_fp:
+        if std_out != "":
+            std_out_sht = " &1>%s " % (std_out)
+        else:
+            std_out_sht = ""
+        if std_err != "":
+            std_err_sht = " &2>%s " % (std_err)
+        else:
+            std_err_sht = ""
+        shell_file_fp.write(' '.join(*objs) + std_out_sht + std_err_sht + "\n")
+        shell_file_fp.flush()
     print(bcolors.OKBLUE + "COMMAND:\t" + bcolors.ENDC, ' '.join(*objs), file=sys.stderr)
 
 def results(*objs):
@@ -601,7 +624,7 @@ def build_bowtie2_index(index_name, reads_file):
     command = os.path.join(base_path, "bin/bowtie2-2.2.2/bowtie2-build ") + os.path.abspath(reads_file) + " " + os.path.abspath(index_name)
 
     # Bad workaround.
-    out_cmd([command])
+    out_cmd(FNULL.name, FNULL.name, [command])
 
     bowtie2_build_proc = subprocess.Popen(command, shell = True, stdout = FNULL, stderr = FNULL)
     bowtie_output, err = bowtie2_build_proc.communicate()
@@ -667,22 +690,21 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
     # Using bowtie 2.
     command = os.path.join(base_path, "bin/bowtie2-2.2.2/bowtie2 ") + bowtie2_args + " -S " + output_sam
     
-    out_cmd([command])
+    out_cmd( FNULL.name, FNULL.name,[command])
 
 
-    ignore = open('/dev/null', 'w')
     #call(command.split())
     args = shlex.split(command) 
-    bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=ignore)
+    bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=FNULL)
     bowtie_output, err = bowtie_proc.communicate()
  
 
 
     if bowtie2_unaligned_check_args != "":
         command = os.path.join(base_path, "bin/bowtie2-2.2.2/bowtie2 ") + bowtie2_unaligned_check_args + " -S " + output_sam + "_2.sam"
-        out_cmd([command])
+        out_cmd( FNULL.name,  FNULL.name, [command])
         args = shlex.split(command)
-        bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=ignore)
+        bowtie_proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=FNULL)
         bowtie_output, err = bowtie_proc.communicate()
 
     return unaligned_dir
@@ -697,7 +719,7 @@ def run_breakpoint_finder(options,unaligned,breakpoint_dir):
             '-u', unaligned,\
             '-o', breakpoint_dir + 'split_reads/']
 
-    out_cmd(call_arr)
+    out_cmd( "", std_err_file.name, call_arr)
     call(call_arr, stderr=std_err_file)
     std_err_file.close()
     
@@ -708,7 +730,7 @@ def run_breakpoint_finder(options,unaligned,breakpoint_dir):
             '-b', options.breakpoints_bin, '-o', breakpoint_dir,\
             '-c', options.coverage_file,\
             '-p', options.threads]
-    out_cmd(call_arr)
+    out_cmd( "", std_err_file.name,call_arr)
     call(call_arr,stderr=std_err_file)
     results(breakpoint_dir + 'interesting_bins.gff')
     return breakpoint_dir + 'interesting_bins.gff'
@@ -795,6 +817,9 @@ def bin_coverage(options, bin_dir):
     bin_set = set(contig_to_bin_map.values())
     fp_dict = {}
     bin_dir_dict = {}
+    open_fp_count = 0
+    unopened_fp = {}
+    processed_file_names = {}
     for bin in bin_set:
         #a_new_bin = bin_dir + "bin" + str(bin) + "/"
         a_new_bin = bin_dir + str(bin_to_name_map[bin][0]) + "x-" + str(bin_to_name_map[bin][1]) + "x/"
@@ -802,23 +827,54 @@ def bin_coverage(options, bin_dir):
         ensure_dir(a_new_bin)
         shutil.copy(options.coverage_file, a_new_bin +\
                 os.path.basename(options.coverage_file))
-        fp_dict[bin] = open(a_new_bin + os.path.basename(options.fasta_file),'w')
+        if open_fp_count < (file_limit/2):
+            fp_dict[bin] = open(a_new_bin + os.path.basename(options.fasta_file),'w')
+            open_fp_count += 1
+        else:
+            unopened_fp[bin] = a_new_bin + os.path.basename(options.fasta_file)
 
-    with open(options.fasta_file,'r') as assembly:
-        for contig in contig_reader(assembly):
-            # TODO: Clean up.
-            if contig['name'][1:].strip() in contig_to_bin_map:
-                bin = contig_to_bin_map[contig['name'][1:].strip()]
-                fp_dict[bin].write(contig['name'])
-                fp_dict[bin].writelines(contig['sequence'])
+        
+        #fp_dict[bin].close()
+        #fp_dict[bin] = a_new_bin + os.path.basename(options.fasta_file)
 
-    for fp in fp_dict.values():
-        fp.close()
+    
+    while True:
+        with open(options.fasta_file,'r') as assembly:
+            for contig in contig_reader(assembly):
+                # TODO: Clean up.
+                if contig['name'][1:].strip() in contig_to_bin_map:
+                    bin = contig_to_bin_map[contig['name'][1:].strip()]
+                    if bin in fp_dict.keys() and not fp_dict[bin].closed:
+                        with fp_dict[bin] as bin_file:
+                            bin_file.write(contig['name'])
+                            bin_file.writelines(contig['sequence'])
+        
+        temp_key_list = fp_dict.keys()[:]
+        for bin in temp_key_list:
+            fp_dict[bin].close()
+            open_fp_count -= 1
+            processed_file_names[bin] = fp_dict[bin]
+            del fp_dict[bin]
+        
+        if len(unopened_fp.keys()) == 0:
+            break
 
-    for fp in fp_dict.values():
+        temp_key_list = unopened_fp.keys()[:]
+        for bin in temp_key_list:
+            if open_fp_count < (file_limit /2 ):
+                fp_dict[bin] = open(unopened_fp[bin],'w')
+                del unopened_fp[bin]
+                opened_fp_count += 1
+            else:
+                break
+
+
+        
+
+    for fp in processed_file_names.values():
         name = fp.name
-        if os.stat(fp.name).st_size <= 10:
-            shutil.rmtree(os.path.dirname(fp.name))
+        if os.stat(name).st_size <= 10:
+            shutil.rmtree(os.path.dirname(name))
 
     return contig_to_bin_map,bin_dir_dict
 
@@ -858,7 +914,7 @@ def run_lap(options, sam_output_location, reads_trimmed_location):
         reads = [options.first_mates, options.second_mates]
 
     call_arr = [os.path.join(base_path, "bin/lap/aligner/calc_prob.py"), "-a", options.fasta_file,  "-s", sam_output_location,  "-q", "-i",  ','.join(reads), "-n", options.coverage_file]
-    out_cmd(call_arr)
+    out_cmd(fp.name, "", call_arr)
     #warning("That command outputs to: ", output_probs_location)
     results(output_probs_location)
 
@@ -866,7 +922,7 @@ def run_lap(options, sam_output_location, reads_trimmed_location):
     output_sum_probs_location = output_probs_dir + "output.sum"
 
     call_arr = [os.path.join(base_path, "bin/lap/aligner/sum_prob.py"), "-i", output_probs_location]
-    out_cmd(call_arr)
+    out_cmd( output_sum_probs_location, "", call_arr)
     call(call_arr, stdout=open(output_sum_probs_location,'w'))
     results(output_sum_probs_location)
 
@@ -884,13 +940,13 @@ def run_samtools(options, sam_output_location, with_pileup = True, index=False):
 
     #warning("About to run samtools view to create bam")
     call_arr = [os.path.join(base_path, "bin/Reapr_1.0.17/src/samtools"), "view", "-bS", sam_output_location]
-    out_cmd(call_arr)
+    out_cmd(bam_fp.name, error_fp.name, call_arr)
     #warning("That command outputs to file: ", bam_location)
     call(call_arr, stdout = bam_fp, stderr = error_fp)
 
     #warning("About to attempt to sort bam")
     call_arr = [os.path.join(base_path, "bin/Reapr_1.0.17/src/samtools"), "sort", bam_location, sorted_bam_location]
-    out_cmd(call_arr)
+    out_cmd( "", FNULL.name, call_arr)
     call(call_arr, stderr = FNULL)
 
     coverage_file_dir = options.output_dir + "/coverage/"
@@ -900,14 +956,14 @@ def run_samtools(options, sam_output_location, with_pileup = True, index=False):
 
     if with_pileup:
         call_arr = [os.path.join(base_path, "bin/Reapr_1.0.17/src/samtools"), "mpileup", "-A", "-f", options.fasta_file, sorted_bam_location + ".bam"]
-        out_cmd(call_arr)
+        out_cmd(p_fp.name, FNULL.name, call_arr)
         results(pileup_file)
         #warning("That command outputs to file: ", pileup_file)
         call(call_arr, stdout = p_fp, stderr = FNULL)
 
     if index:
         call_arr = [os.path.join(base_path, "bin/Reapr_1.0.17/src/samtools"), "index", sorted_bam_location + ".bam"]
-        out_cmd(call_arr)
+        out_cmd(FNULL.name, FNULL.name, call_arr)
         call(call_arr, stdout = FNULL, stderr = FNULL)
 
     return (bam_location, sorted_bam_location, pileup_file)
@@ -920,7 +976,7 @@ def run_depth_of_coverage(options, pileup_file):
     abundance_file = options.coverage_file
     #call_arr = ["src/py/depth_of_coverage.py", "-a", abundance_file, "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g", "-e"]
     call_arr = [os.path.join(base_path, "src/py/depth_of_coverage.py"), "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g", "-e"]
-    out_cmd(call_arr)
+    out_cmd("","",call_arr)
     call(call_arr)
     results(dp_fp)
 
@@ -934,7 +990,7 @@ def run_reapr(options, sorted_bam_location):
 
     #warning("About to run facheck")
     call_arr = [reapr_command, "facheck", options.fasta_file ]
-    out_cmd(call_arr)
+    out_cmd("","",call_arr)
     call(call_arr)
 
     reapr_output_dir = options.output_dir + "/reapr"
@@ -943,11 +999,11 @@ def run_reapr(options, sorted_bam_location):
     #warning("About to run reapr pipeline")
     call_arr = [reapr_command, "pipeline", options.fasta_file,\
             sorted_bam_location + ".bam", reapr_output_dir]
-    out_cmd(call_arr)
+    out_cmd(FNULL.name,  FNULL.name, call_arr)
     call(call_arr, stdout=FNULL, stderr=FNULL)
 
     call_arr = ["gunzip", reapr_output_dir + "/03.score.errors.gff"]
-    out_cmd(call_arr)
+    out_cmd(FNULL.name,  FNULL.name, call_arr)
     call(call_arr, stdout=FNULL, stderr=FNULL)
 
     if os.path.exists(reapr_output_dir + "/03.score.errors.gff"):

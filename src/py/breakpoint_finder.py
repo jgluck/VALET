@@ -5,6 +5,8 @@ from subprocess import call
 import os
 import sys
 import math
+import time
+from time import gmtime, strftime
 
 class BreakpointFinder:
 
@@ -14,7 +16,8 @@ class BreakpointFinder:
         self.singleton_halves = []
         self.read_lengths = {}
         self.bin_contents = {}
-        self.surviving_bins = []
+        self.inverse_bin_contents = {}
+        self.surviving_bins = {}
         self.getOptions()
         self.base_path = os.path.dirname(sys.argv[0])[:-len("/src/py")]
         self.set_locations()
@@ -55,6 +58,7 @@ class BreakpointFinder:
         self.meta_file = self.breakpoint_dir + "meta_data.data"
 
         self.bin_contents_file = self.breakpoint_dir + "bin_contents.csv"
+        
         self.reciprical_file = self.breakpoint_dir + "reciprical_breakpoints.csv"
     
     def read_coverages(self):
@@ -89,6 +93,7 @@ class BreakpointFinder:
         out_file = open(self.sorted_breakpoint_file, 'w')
         warning("This call outputs to file: ", self.sorted_breakpoint_file)
         call(call_arr, stdout=out_file)
+        out_file.close()
 
     def bin_breakpoints(self):
         warning("About to start binning breakpoints")
@@ -104,26 +109,30 @@ class BreakpointFinder:
                     if match_start == 0:
                         warning("Match start was 0 in bin breakpoints")
                         continue
-                    if match_start >= self.w_s and match_start <= self.w_e:
+                    elif match_start >= self.w_s and match_start <= self.w_e:
                         out_file.write(match.strip()+('\t%s\n'%(self.w_s)))
-                        self.add_to_bin_contents(match_split[0]+"\t"+str(self.w_s),match.split()[2])
+                        self.add_to_bin_contents(match_split[0]+"\t"+str(self.w_s),match_split[2])
                     else:
-                        while match_start < self.w_s or match_start > self.w_e:
-                            self.w_s = self.w_e
-                            self.w_e = self.w_s + self.bin_size
+                        self.w_s = ((match_start / (self.bin_size+1)) * (self.bin_size+1))+1
+                        self.w_e = self.w_s + self.bin_size 
                         out_file.write(match.strip()+('\t%s\n'%(self.w_s)))
-                        self.add_to_bin_contents(match_split[0]+"\t"+str(self.w_s), match.split()[2])
+                        self.add_to_bin_contents(match_split[0]+"\t"+str(self.w_s), match_split[2])
         warning("Done binning contigs")
 
     def add_to_bin_contents(self, key, half_id):
-        if key not in self.bin_contents.keys():
+        if key not in self.bin_contents:
             self.bin_contents[key] = [half_id]
         else:
             self.bin_contents[key].append(half_id)
 
+        if half_id not in self.inverse_bin_contents:
+            self.inverse_bin_contents[half_id] = [key]
+        else:
+            self.inverse_bin_contents[half_id].append(key)
+
     def output_bin_contents(self, only_surviving = False):
         with open(self.bin_contents_file,'w') as b_c_file:
-            for bin in self.bin_contents.keys():
+            for bin in self.bin_contents:
                 if only_surviving:
                     if bin in self.surviving_bins:
                         b_c_file.write(bin + "\n")
@@ -139,9 +148,109 @@ class BreakpointFinder:
 
 
     def collapse_bins(self):
+        warning("About to collapse bins")
         call_str = "awk '{printf \"%%s\\t%%s\\n\",$1,$6}' %s | sort -T ./| uniq -c > %s" %(self.binned_breakpoint_file, self.collapsed_breakpoint_file)
         out_cmd(call_str)
         call(call_str,shell=True)
+
+    def trim_bins_3(self):
+        avg_coverage_in_bin = {}
+        should_pass = {}
+        b_c_d = {}
+        b_c_d_r = {}
+        warning("About to assemble surviving bins.")
+        ave_read_len = self.average_read_length / float(self.number_of_reads)
+        warning("Beginning pass_1")
+        with open(self.collapsed_breakpoint_file,'r') as pass_1:
+            for line in pass_1:
+                split_l = line.split()
+                num_matches_in_bin = int(split_l[0])
+                bin_name = split_l[1] + '\t' + split_l[2]
+                avg_coverage_in_bin[bin_name] = self.contig_coverage[split_l[1]]
+                if (2*ave_read_len * num_matches_in_bin) / self.bin_size >= avg_coverage_in_bin[bin_name]/4.0:
+                    self.surviving_bins[bin_name] = True
+                else:
+                    warning("Removing bin: %s because eq matches: %f < cutoff: %f" % (bin_name, (2* ave_read_len*num_matches_in_bin)/float(self.bin_size), avg_coverage_in_bin[bin_name]/4.0))
+        warning("End pass 1")
+        warning("Surviving bins assembled: %d surviving bins." % (len(self.surviving_bins)))
+        warning("Ave read len: %f " % (self.average_read_length / float(self.number_of_reads)))
+        
+        warning("About to output bin contents")
+        self.output_bin_contents(True)
+        warning("Bin contents outputted")
+
+        warning("About to assemble bin contents dictionary reciprocity")
+        for bin_1 in self.surviving_bins:
+            b_c_d_r[bin_1] = {}
+            for read in self.bin_contents[bin_1]:
+                sister_read = sister_name(read)
+                if sister_read in self.inverse_bin_contents:
+                    for bin_2 in self.inverse_bin_contents[sister_read]:
+                        if bin_2 in self.surviving_bins:
+                            if bin_2 in b_c_d_r[bin_1]:
+                                b_c_d_r[bin_1][bin_2] += 1
+                            else:
+                                b_c_d_r[bin_1][bin_2] = 1
+
+        #for bin_1 in self.bin_contents:
+        #    if bin_1 in self.surviving_bins:
+        #        b_c_d_r[bin_1] = {}
+        #        for bin_2 in self.surviving_bins:
+        #            if bin_2 in b_c_d_r and bin_1 in b_c_d_r[key_2]:
+        #                b_c_d_r[bin_1][bin_2] = b_c_d_r[bin_2][bin_1]
+        #                continue
+        #            b_c_d_r[bin_1][bin_2] = len([half_read for half_read in self.bin_contents[bin_1] if sister_name(half_read) in self.bin_contents[bin_2]])
+        warning("Assembled that dictionary size: %d" % (sys.getsizeof(b_c_d_r)))
+
+
+        warning("About to output some reciprocals")
+        with open(self.reciprical_file,'w') as reciprocals:
+            for bin in self.surviving_bins:
+                rec = find_reciprical_pair_2(b_c_d_r, bin)
+                if rec:
+                    reciprocals.write(bin + "\t" + rec + "\n")
+
+        warning("Outputted reciprocals")
+
+        warning("About to attempt to output interesting bins")
+        with open(self.collapsed_breakpoint_file,'r') as pass_3,\
+                open(self.bins_of_interest_file,'w') as out_file:
+                    color = "#FF9900"
+                    for line in pass_3:
+                        split_line = line.split()
+                        current_key = split_line[1] + "\t" + split_line[2]
+                        if current_key in self.surviving_bins:
+                            num_sisters = 0
+                            if current_key not in b_c_d_r:
+                                warning("Current key: %s not in b_c_d_r keys\n"\
+                                        % (current_key))
+                            for key in b_c_d_r[current_key]:
+                                num_sisters += b_c_d_r[current_key][key]
+                            #if num_sisters < 5:
+                            #    warning("Skipping bin: %s because number of sisters: %d was low" % (current_key, num_sisters))
+                            #    continue
+                            rec = find_reciprical_pair_2(b_c_d_r, current_key)
+                            #if rec == None:
+                            #    warning("No Reciprical for bin: %s so skipping" % (current_key))
+                            #    continue
+                            out_file.write("%s\tBreakpoint_finder"\
+                                    "\tBreakpoint_Finder_excessive_alignment"\
+                                    "\t%d\t%d\t%d\t.\t.\t"\
+                                    "singletons_aligned_in_bin=%f;color=%s"\
+                                    "number_of_sisters=%d;reciprocal=%s\n"\
+                                    %(split_line[1],\
+                                    int(split_line[2]),\
+                                    int(split_line[2])+self.bin_size,\
+                                    int(split_line[0]),\
+                                    float(split_line[0]),\
+                                    color,\
+                                    num_sisters,\
+                                    str(rec)))
+
+
+
+
+
 
     def trim_bins_2(self):
         avg_coverage_in_bin = {}
@@ -174,7 +283,7 @@ class BreakpointFinder:
                     if key_2 in b_c_d_r.keys() and key in b_c_d_r[key_2].keys():
                         b_c_d_r[key][key_2] = b_c_d_r[key_2][key]
                         continue
-                    b_c_d_r[key][key_2] = [val for val in self.bin_contents[key] if find_sister(val) in self.bin_contents[key_2]]
+                    b_c_d_r[key][key_2] = [val for val in self.bin_contents[key] if sister_name(val) in self.bin_contents[key_2]]
         warning("Assembled that dictionary size: %d" % (sys.getsizeof(b_c_d_r)))
 
 
@@ -269,10 +378,13 @@ class BreakpointFinder:
 
 
     def read_contig(self, fp):
+        warning("We're about to start the read_contig generator")
+        line_counter = 0
         run_flag = True
         contig_bundle = []
         line_buffer = ""
         while run_flag:
+            #start_time = time.time()
             current_contig = ""
             if line_buffer != "":
                 current_contig = line_buffer.split('\t')[0]
@@ -280,8 +392,10 @@ class BreakpointFinder:
                 line_buffer = ""
             while True:
                 line = fp.readline()
-                if line == '':
+                line_counter += 1
+                if not line:
                     run_flag = False
+                    warning("We've reached the end of the breakpoint file %d lines read." % ( line_counter))
                     break
                 elif line.split('\t')[0] != current_contig:
                     line_buffer = line
@@ -290,6 +404,7 @@ class BreakpointFinder:
                     contig_bundle.append(line)
             ret_bundle = contig_bundle
             contig_bundle = []
+            #warning("Read contig returned in : %f" %(time.time() - start_time))
             yield ret_bundle
  
     def read_in_lengths(self):
@@ -368,6 +483,7 @@ class BreakpointFinder:
                                             len(line_components[9])))
 
     def go(self):
+        warning("Arguments used to call breakpoint finder: %s" % (" ".join(sys.argv)))
         self.read_coverages()
         self.run_bowtie_index()
         self.run_bowtie_2()
@@ -375,7 +491,7 @@ class BreakpointFinder:
         self.sort_breakpoints()
         self.bin_breakpoints()
         self.collapse_bins()
-        self.trim_bins_2()
+        self.trim_bins_3()
     
     def getOptions(self):
         parser = OptionParser()
@@ -415,7 +531,7 @@ class BreakpointFinder:
             parser.print_help()
             exit(1)
 
-def find_sister(s):
+def sister_name(s):
     #s_split = s.split()
     rd = s
     if rd.endswith("/1"):
@@ -448,6 +564,30 @@ def read_coverage(cov_file, contig, start,end):
     else:
         return float(cumulative)/float(n)
 
+
+def find_reciprical_pair_2(b_c_d_r, bin):
+    max_partner = []
+    max_partner_key = []
+    for partner in b_c_d_r[bin]:
+        if len(max_partner) == 0 or b_c_d_r[bin][partner] > max_partner[0]:
+            max_partner.append(b_c_d_r[bin][partner])
+            max_partner_key.append(partner[:])
+
+    for (max_partner_i, max_partner_key_i) in zip(max_partner[::-1], max_partner_key[::-1]):
+        max_alternate = 0
+        max_alternate_key = ""
+        for alternate in b_c_d_r[max_partner_key_i]:
+            if b_c_d_r[max_partner_key_i][alternate] > max_alternate:
+                max_alternate = b_c_d_r[max_partner_key_i][alternate]
+                max_alternate_key = alternate[:]
+        if max_alternate_key == bin:
+            return max_partner_key_i
+        else:
+            return None
+    return None
+
+
+
 def find_reciprical_pair(b_c_d_r, bin):
     max_partner = []
     max_partner_key = []
@@ -476,7 +616,10 @@ def ensure_dir(f):
         os.makedirs(d)
 
 def warning(*objs):
-    print("\tWARNING: ",*objs, file=sys.stderr)
+    timestamp = strftime("%Y-%m-%d %H:%M:%S", gmtime())
+    timestamp = "[" + timestamp + "] "
+    print(timestamp + "\tWARNING: ",*objs, file=sys.stderr)
+    sys.stderr.flush()
 
 def out_cmd(*objs):
     print("="*75, file=sys.stderr)

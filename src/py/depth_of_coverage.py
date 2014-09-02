@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
+from multiprocessing import Process, Lock
 from optparse import OptionParser
 import collections
 import copy
@@ -23,6 +24,7 @@ def setup_options():
     parser.add_option("-g", "--gff", dest="gff_format", default=False, action='store_true')
     parser.add_option("-e", "--empirical", dest="use_empirical", default=False, action='store_true')
     parser.add_option("-i", "--ignore", dest="ignore_ends", help="Ignore the first/last i bps of the read", type="int", default=0)
+    parser.add_option("-c", "--chunks", dest="chunks", help="Number of output file chunks.", type="int", default=1)
 
     (options,args) = parser.parse_args()
 
@@ -51,24 +53,10 @@ def ensure_dir(f):
         os.makedirs(d)
 
 
-def main():
-    (options, args) = setup_options()
-    abundance_file = options.abundance_file
-    mpile_file = options.mp_file_loc
-    
-    if options.output_location:
-        ensure_dir(os.path.dirname(options.output_location))
-    bad_cvg_file = open(options.output_location,'w') if options.output_location else sys.stdout
-    
-    window_size = options.window_size
+def find_coverage_errors(mpile_file, output_location, window_size, abundance_dict, write_lock):
 
-    abundance_dict = {}
-    
-    if options.abundance_file:
-        read_abundances(abundance_file, abundance_dict)
-    else:
-        # Calculate the coverage and window from the data itself.
-        calculate_coverages(mpile_file, abundance_dict)
+
+    bad_cvg_file = open(output_location,'a') if output_location else sys.stdout
 
     coverage_window = collections.deque(maxlen = window_size)
     flagged_regions = []
@@ -129,9 +117,50 @@ def main():
                         [prev_contig, PROG_NAME, cov_type, end_pos - len(coverage_window) + 1, end_pos, median, lower_hinge, upper_hinge, color])
                     region_index += 1
  
+    write_lock.acquire()
     for region in flagged_regions:
         bad_cvg_file.write("%s\t%s\t%s\t%d\t%d\t%f\t.\t.\tlow=%f;high=%f;color=%s\n" % (region[0], region[1], \
                     region[2], region[3], region[4], region[5], region[6], region[7], region[8]))
+    write_lock.release()
+
+
+def main():
+    (options, args) = setup_options()
+    abundance_file = options.abundance_file
+    mpile_file = options.mp_file_loc
+    
+    if options.output_location:
+        ensure_dir(os.path.dirname(options.output_location))
+    
+    window_size = options.window_size
+    abundance_dict = {}
+
+    write_lock = Lock()
+
+    if options.abundance_file:
+        read_abundances(abundance_file, abundance_dict)
+    else:
+        # Calculate the coverage and window from the data itself.
+        calculate_coverages(mpile_file, abundance_dict)
+
+    processes = []
+
+    # If we have more than one chunk, we need to append *.{chunk_num} to the file.
+    if options.chunks == 1:
+        p = Process(target=find_coverage_errors, args=(mpile_file, options.output_location, window_size, abundance_dict, write_lock, ))
+        p.start()
+        processes.append(p)
+
+    else:
+        for i in range(0, options.chunks):
+
+            if os.path.isfile(mpile_file + '.' + str(i)):
+                p = Process(target=find_coverage_errors, args=(mpile_file + '.' + str(i), options.output_location, window_size, abundance_dict, write_lock, ))
+                p.start()
+                processes.append(p)
+
+    for p in processes:
+        p.join()
 
 
 def in_range(num, low, high):

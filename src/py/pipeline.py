@@ -85,6 +85,10 @@ def main():
     step("CALCULATING ASSEMBLY PROBABILITY")
     run_lap(options, sam_output_location, reads_trimmed_location)
 
+    if options.threads > 1:
+        step("PARTITIONING COVERAGE FILE")
+        run_split_pileup(options, pileup_file)
+
     step("DEPTH OF COVERAGE")
     error_files.append(run_depth_of_coverage(options, pileup_file))
 
@@ -1028,13 +1032,21 @@ def run_samtools(options, sam_output_location, with_pileup = True, index=False):
     return (bam_location, sorted_bam_location, pileup_file)
 
 
+def run_split_pileup(options, pileup_file):
+    """ Split the pileup file into a number of chunks. """
+
+    call_arr = [os.path.join(base_path, "src/py/split_pileup.py"), "-p", pileup_file, "-c", options.threads]
+    out_cmd("","",call_arr)
+    call(call_arr)
+    
+
 def run_depth_of_coverage(options, pileup_file):
     """ Run depth of coverage. """
 
     dp_fp = options.output_dir + "/coverage/errors_cov.gff"
     abundance_file = options.coverage_file
     #call_arr = ["src/py/depth_of_coverage.py", "-a", abundance_file, "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g", "-e"]
-    call_arr = [os.path.join(base_path, "src/py/depth_of_coverage.py"), "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g", "-e"]
+    call_arr = [os.path.join(base_path, "src/py/depth_of_coverage.py"), "-m", pileup_file, "-w", options.window_size, "-o", dp_fp, "-g", "-e", "-c", options.threads]
     out_cmd("","",call_arr)
     call(call_arr)
     results(dp_fp)

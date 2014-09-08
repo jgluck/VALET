@@ -145,7 +145,7 @@ def main():
                 misassemblies.append(line.strip().split('\t'))
 
     # Sort misassemblies by start site.
-    misassemblies.sort(key = lambda misassembly: (misassembly[0], int(misassembly[3])))
+    misassemblies.sort(key = lambda misassembly: (misassembly[0], int(misassembly[3]), int(misassembly[4])))
     final_misassemblies = []
     for misassembly in misassemblies:
 
@@ -168,6 +168,64 @@ def main():
     summary_file.close()
 
     results(options.output_dir + "/summary.gff")
+    # Open Read Frame (ORF) filtering
+    if options.orf_file:
+        #We have been given an orf file, we should filter based on its contents
+        orf_summary_file = open(options.output_dir + "/orf_filtered_summary.gff", 'w')
+        summary_file = open(summary_file.name, 'r')
+        orf_fp = open(options.orf_file, 'r')
+        cur_orf = orf_fp.readline()
+        split_cur_orf = cur_orf.split('\t')
+        split_cur_orf[3],split_cur_orf[4]  = int(split_cur_orf[3]),int(split_cur_orf[4])
+        #Cycle through misassemblies
+        for cur_missassembly in summary_file: 
+            split_mis = cur_missassembly.split('\t')
+            split_mis[3],split_mis[4] = int(split_mis[3]), int(split_mis[4])
+            while True:
+                #Misassembly before any orfs contigs
+                if not cur_orf or ( split_cur_orf[0] > split_mis[0] ):
+                    break
+                #Misassembly after current orf contig
+                elif split_cur_orf[0] < split_mis[0]:
+                    cur_orf = None
+                    cur_orf = orf_file.readline()
+                    while cur_orf:
+                        split_cur_orf = cur_orf.split('\t')
+                        split_cur_orf[3],split_cur_orf[4]  = int(split_cur_orf[3]),int(split_cur_orf[4])
+                        if split_cur_orf[0] >= split_mis[0]:
+                            break
+                        cur_orf = orf_file.readline()
+                    if not cur_orf:
+                        break
+                    #First and second again
+                else:
+                    #Perfect
+                    ##DO WORK #Break to move on
+                    while True:
+                        if not cur_orf:
+                            break
+                            #Done
+                        elif split_mis[4] < split_cur_orf[3]:
+                            break
+                            # Advance error file to next line
+                        elif ( split_mis[3] < split_cur_orf[3] and split_mis[4]<split_cur_orf[4] )\
+                                or ( split_mis[3] >= split_cur_orf[3] and split_mis[4] <= split_cur_orf[4] )\
+                                or ( split_mis[3] >= split_cur_orf[3] and split_mis[3] <= split_cur_orf[4] and split_mis[4] >= split_cur_orf[4] )\
+                                or ( split_mis[3] < split_cur_orf[3] and split_mis[4] >= split_cur_orf[4] ):
+                            orf_summary_file.write(cur_missassembly)
+                            break
+                            #Error output
+                            #Advance Error file
+                        elif split_mis[3] > split_cur_orf[4]:
+                            cur_orf = orf_fp.readline()
+                            if cur_orf:
+                                split_cur_orf = cur_orf.split('\t')
+                                split_cur_orf[3],split_cur_orf[4]  = int(split_cur_orf[3]),int(split_cur_orf[4])
+                            #Advance orf file, reevaluate
+                        else:
+                            break
+                    break
+
 
     # Find regions with multiple misassembly signatures.
     suspicious_regions = find_suspicious_regions(misassemblies, options.min_suspicious_regions)
@@ -243,6 +301,7 @@ def get_options():
             help="Ignore flagged regions within b bps from the ends of the contigs.") 
     parser.add_option('-k', "--breakpoint-bin", dest="breakpoints_bin", default="50", type=str, \
             help="Bin sized used to find breakpoints.")   
+    parser.add_option('-f', "--orf-file", dest="orf_file", help="gff formatted file containing orfs")
 
     (options, args) = parser.parse_args()
 

@@ -172,8 +172,28 @@ def main():
     summary_file.close()
 
     results(options.output_dir + "/summary.gff")
+    #=====
     # Open Read Frame (ORF) filtering
+    #===
+    orf_filtered_misassemblies = []
     if options.orf_file:
+        
+        call_arr = ["sort", "-T ./", "-k1,1 -k4,4n", options.orf_file, "-o", options.output_dir + "/" + options.orf_file + "_sorted"]
+        out_cmd(FNULL.name, FNULL.name, call_arr)
+        call(call_arr)
+
+        call_arr = ["sort", "-T ./", "-k1,1 -k4,4n", summary_file.name, "-o", summary_file.name+"_sorted"]
+        out_cmd(FNULL.name, FNULL.name, call_arr)
+        call(call_arr, stdout = FNULL, stderr = FNULL)
+
+        call_arr = ["mv" ,  summary_file.name + "_sorted", summary_file.name]
+        out_cmd(FNULL.name, FNULL.name, call_arr)
+        #call(call_arr, stdout = FNULL, stderr = FNULL)
+
+        call_arr = ["mv" , options.output_dir + "/" + options.orf_file+"_sorted", options.orf_file]
+        out_cmd(FNULL.name, FNULL.name, call_arr)
+        #call(call_arr, stdout = FNULL, stderr = FNULL)
+
         #We have been given an orf file, we should filter based on its contents
         orf_summary_file = open(options.output_dir + "/orf_filtered_summary.gff", 'w')
         summary_file = open(summary_file.name, 'r')
@@ -192,13 +212,13 @@ def main():
                 #Misassembly after current orf contig
                 elif split_cur_orf[0] < split_mis[0]:
                     cur_orf = None
-                    cur_orf = orf_file.readline()
+                    cur_orf = orf_fp.readline()
                     while cur_orf:
                         split_cur_orf = cur_orf.split('\t')
                         split_cur_orf[3],split_cur_orf[4]  = int(split_cur_orf[3]),int(split_cur_orf[4])
                         if split_cur_orf[0] >= split_mis[0]:
                             break
-                        cur_orf = orf_file.readline()
+                        cur_orf = orf_fp.readline()
                     if not cur_orf:
                         break
                     #First and second again
@@ -217,6 +237,7 @@ def main():
                                 or ( split_mis[3] >= split_cur_orf[3] and split_mis[3] <= split_cur_orf[4] and split_mis[4] >= split_cur_orf[4] )\
                                 or ( split_mis[3] < split_cur_orf[3] and split_mis[4] >= split_cur_orf[4] ):
                             orf_summary_file.write(cur_missassembly)
+                            orf_filtered_misassemblies.append(cur_missassembly.strip().split('\t'))
                             break
                             #Error output
                             #Advance Error file
@@ -245,15 +266,24 @@ def main():
     # Output summary table.
     generate_summary_table(options.output_dir + "/summary.tsv", all_contig_lengths, \
         contig_lengths, final_misassemblies)
-
     results(options.output_dir + "/summary.tsv")
+    
+    if options.orf_file:
+        generate_summary_table(options.output_dir + "/orf_summary.tsv", \
+                all_contig_lengths, contig_lengths, orf_filtered_misassemblies,orf=True)
+        joined_summary_fp = open(options.output_dir + "/joined_summary.tsv", 'w')
+        call_arr = ["join", options.output_dir + "/summary.tsv", options.output_dir + "/orf_summary.tsv"]
+        out_cmd(joined_summary_fp.name, FNULL.name, call_arr)
+        call(call_arr, stdout = joined_summary_fp, stderr = FNULL)
+
+ 
 
     # Output suspicious table.
     #generate_summary_table(options.output_dir + "/suspicious.tsv", all_contig_lengths, \
     #    contig_lengths, final_suspicious_misassemblies)
 
     #results(options.output_dir + "/suspicious.tsv")
-
+    
     if options.email:
         notify_complete(options.email,time.time()-start_time)
     
@@ -359,11 +389,11 @@ def out_cmd(std_out = "", std_err = "", *objs):
     #line(75)
     if shell_file_fp:
         if std_out != "":
-            std_out_sht = " &1>%s " % (std_out)
+            std_out_sht = " 1>%s " % (std_out)
         else:
             std_out_sht = ""
         if std_err != "":
-            std_err_sht = " &2>%s " % (std_err)
+            std_err_sht = " 2>%s " % (std_err)
         else:
             std_err_sht = ""
         shell_file_fp.write(' '.join(*objs) + std_out_sht + std_err_sht + "\n")
@@ -541,7 +571,7 @@ def find_suspicious_regions(misassemblies, min_cutoff = 2):
     return compressed_suspicious_regions
 
 
-def generate_summary_table(table_filename, all_contig_lengths, filtered_contig_lengths, misassemblies):
+def generate_summary_table(table_filename, all_contig_lengths, filtered_contig_lengths, misassemblies,orf=False):
     """
     Output the misassemblies in a table format:
 
@@ -551,7 +581,11 @@ def generate_summary_table(table_filename, all_contig_lengths, filtered_contig_l
     """
 
     table_file = open(table_filename, 'w')
-    table_file.write("contig_name\tcontig_length\tlow_cov\tlow_cov_bps\thigh_cov\thigh_cov_bps\treapr\treapr_bps\tbreakpoints\tbreakpoints_bps\n")
+
+    if orf:
+        table_file.write("contig_name\tcontig_length\torf_low_cov\torf_low_cov_bps\torf_high_cov\torf_high_cov_bps\torf_reapr\torf_reapr_bps\torf_breakpoints\torf_breakpoints_bps\n")
+    else:
+        table_file.write("contig_name\tcontig_length\tlow_cov\tlow_cov_bps\thigh_cov\thigh_cov_bps\treapr\treapr_bps\tbreakpoints\tbreakpoints_bps\n")
 
     prev_contig = None
     curr_contig = None

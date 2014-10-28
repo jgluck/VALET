@@ -359,7 +359,7 @@ def get_contig_lengths(sam_filename):
 
     # Build dictionary of contig lengths.
     contig_lengths = {}
-    pattern = re.compile('SN:(?P<contig>[\w_\|\.]+)\s*LN:(?P<length>\d+)')
+    pattern = re.compile('SN:(?P<contig>[\w_\|\.\-]+)\s*LN:(?P<length>\d+)')
     line = sam_file.readline()
     while line.startswith("@"):
 
@@ -675,7 +675,7 @@ def run_bowtie2(options = None, output_sam = 'temp.sam'):
                 + " -2 " + options.second_mates + " -p " + options.threads\
                 + " --very-sensitive -a " + " --reorder --"\
                 + options.orientation + " -I " + options.min_insert_size\
-                + " -X " + options.max_insert_size #+ " --un-conc "\
+                + " -X " + options.max_insert_size + " --no-mixed" #+ " --un-conc "\
                 #+ unaligned_file
         
         bowtie2_unaligned_check_args = "-a -x " + assembly_index + read_type + " -U "\
@@ -917,7 +917,11 @@ def run_lap(options, sam_output_location, reads_trimmed_location):
     if options.first_mates:
         reads = [options.first_mates, options.second_mates]
 
-    call_arr = [os.path.join(base_path, "bin/lap/aligner/calc_prob.py"), "-a", options.fasta_file,  "-s", sam_output_location,  "-q", "-i",  ','.join(reads), "-n", options.coverage_file]
+    call_arr = []
+    if options.first_mates:
+        call_arr = [os.path.join(base_path, "bin/lap/aligner/calc_prob.py"), "-a", options.fasta_file,  "-s", sam_output_location,  "-q", "-1", options.first_mates, "-2", options.second_mates, "-n", options.coverage_file, '-o', options.orientation, "-I", options.min_insert_size, "-X", options.max_insert_size, '-p', options.threads]
+    else:
+        call_arr = [os.path.join(base_path, "bin/lap/aligner/calc_prob.py"), "-a", options.fasta_file,  "-s", sam_output_location,  "-q", "-i",  ','.join(reads), "-n", options.coverage_file, '-p', options.threads]
     out_cmd(fp.name, "", call_arr)
     #warning("That command outputs to: ", output_probs_location)
     results(output_probs_location)
@@ -925,7 +929,7 @@ def run_lap(options, sam_output_location, reads_trimmed_location):
     call(call_arr, stdout=fp)
     output_sum_probs_location = output_probs_dir + "output.sum"
 
-    call_arr = [os.path.join(base_path, "bin/lap/aligner/sum_prob.py"), "-i", output_probs_location]
+    call_arr = [os.path.join(base_path, "bin/lap/aligner/sum_prob.py"), "-i", output_probs_location, "-t", "1e-80"]
     out_cmd( output_sum_probs_location, "", call_arr)
     call(call_arr, stdout=open(output_sum_probs_location,'w'))
     results(output_sum_probs_location)

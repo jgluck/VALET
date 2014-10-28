@@ -149,7 +149,7 @@ def main():
                 misassemblies.append(line.strip().split('\t'))
 
     # Sort misassemblies by start site.
-    misassemblies.sort(key = lambda misassembly: (misassembly[0], int(misassembly[3])))
+    misassemblies.sort(key = lambda misassembly: (misassembly[0], int(misassembly[3]), int(misassembly[4])))
     final_misassemblies = []
     for misassembly in misassemblies:
 
@@ -172,6 +172,85 @@ def main():
     summary_file.close()
 
     results(options.output_dir + "/summary.gff")
+    #=====
+    # Open Read Frame (ORF) filtering
+    #===
+    orf_filtered_misassemblies = []
+    if options.orf_file:
+        
+        call_arr = ["sort", "-T ./", "-k1,1",  "-k4,4n", options.orf_file, "-o", options.output_dir + "/" + options.orf_file + "_sorted"]
+        out_cmd(FNULL.name, FNULL.name, call_arr)
+        call(call_arr)
+
+        call_arr = ["sort", "-T ./", "-k1,1", "-k4,4n", summary_file.name, "-o", summary_file.name+"_sorted"]
+        out_cmd(FNULL.name, FNULL.name, call_arr)
+        call(call_arr, stdout = FNULL, stderr = FNULL)
+
+        call_arr = ["mv" ,  summary_file.name + "_sorted", summary_file.name]
+        out_cmd(FNULL.name, FNULL.name, call_arr)
+        call(call_arr, stdout = FNULL, stderr = FNULL)
+
+        call_arr = ["mv" , options.output_dir + "/" + options.orf_file+"_sorted", options.orf_file]
+        out_cmd(FNULL.name, FNULL.name, call_arr)
+        call(call_arr, stdout = FNULL, stderr = FNULL)
+
+        #We have been given an orf file, we should filter based on its contents
+        orf_summary_file = open(options.output_dir + "/orf_filtered_summary.gff", 'w')
+        summary_file = open(summary_file.name, 'r')
+        orf_fp = open(options.orf_file, 'r')
+        cur_orf = orf_fp.readline()
+        split_cur_orf = cur_orf.split('\t')
+        split_cur_orf[3],split_cur_orf[4]  = int(split_cur_orf[3]),int(split_cur_orf[4])
+        #Cycle through misassemblies
+        for cur_missassembly in summary_file: 
+            split_mis = cur_missassembly.split('\t')
+            split_mis[3],split_mis[4] = int(split_mis[3]), int(split_mis[4])
+            while True:
+                #Misassembly before any orfs contigs
+                if not cur_orf or ( split_cur_orf[0] > split_mis[0] ):
+                    break
+                #Misassembly after current orf contig
+                elif split_cur_orf[0] < split_mis[0]:
+                    cur_orf = None
+                    cur_orf = orf_fp.readline()
+                    while cur_orf:
+                        split_cur_orf = cur_orf.split('\t')
+                        split_cur_orf[3],split_cur_orf[4]  = int(split_cur_orf[3]),int(split_cur_orf[4])
+                        if split_cur_orf[0] >= split_mis[0]:
+                            break
+                        cur_orf = orf_fp.readline()
+                    if not cur_orf:
+                        break
+                    #First and second again
+                else:
+                    #Perfect
+                    ##DO WORK #Break to move on
+                    while True:
+                        if not cur_orf:
+                            break
+                            #Done
+                        elif split_mis[4] < split_cur_orf[3]:
+                            break
+                            # Advance error file to next line
+                        elif ( split_mis[3] < split_cur_orf[3] and split_mis[4]<split_cur_orf[4] )\
+                                or ( split_mis[3] >= split_cur_orf[3] and split_mis[4] <= split_cur_orf[4] )\
+                                or ( split_mis[3] >= split_cur_orf[3] and split_mis[3] <= split_cur_orf[4] and split_mis[4] >= split_cur_orf[4] )\
+                                or ( split_mis[3] < split_cur_orf[3] and split_mis[4] >= split_cur_orf[4] ):
+                            orf_summary_file.write(cur_missassembly)
+                            orf_filtered_misassemblies.append(cur_missassembly.strip().split('\t'))
+                            break
+                            #Error output
+                            #Advance Error file
+                        elif split_mis[3] > split_cur_orf[4]:
+                            cur_orf = orf_fp.readline()
+                            if cur_orf:
+                                split_cur_orf = cur_orf.split('\t')
+                                split_cur_orf[3],split_cur_orf[4]  = int(split_cur_orf[3]),int(split_cur_orf[4])
+                            #Advance orf file, reevaluate
+                        else:
+                            break
+                    break
+
 
     # Find regions with multiple misassembly signatures.
     suspicious_regions = find_suspicious_regions(misassemblies, options.min_suspicious_regions)
@@ -187,15 +266,24 @@ def main():
     # Output summary table.
     generate_summary_table(options.output_dir + "/summary.tsv", all_contig_lengths, \
         contig_lengths, final_misassemblies)
-
     results(options.output_dir + "/summary.tsv")
+    
+    if options.orf_file:
+        generate_summary_table(options.output_dir + "/orf_summary.tsv", \
+                all_contig_lengths, contig_lengths, orf_filtered_misassemblies,orf=True)
+        joined_summary_fp = open(options.output_dir + "/joined_summary.tsv", 'w')
+        call_arr = ["join", "-a1" , "-o", "0", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10", '-e',  "0", '-1', '1', '-2', '1' , "-t", '	', options.output_dir + "/summary.tsv", options.output_dir + "/orf_summary.tsv"]
+        out_cmd(joined_summary_fp.name, FNULL.name, call_arr)
+        call(call_arr, stdout = joined_summary_fp, stderr = FNULL)
+
+ 
 
     # Output suspicious table.
     #generate_summary_table(options.output_dir + "/suspicious.tsv", all_contig_lengths, \
     #    contig_lengths, final_suspicious_misassemblies)
 
     #results(options.output_dir + "/suspicious.tsv")
-
+    
     if options.email:
         notify_complete(options.email,time.time()-start_time)
     
@@ -247,6 +335,7 @@ def get_options():
             help="Ignore flagged regions within b bps from the ends of the contigs.") 
     parser.add_option('-k', "--breakpoint-bin", dest="breakpoints_bin", default="50", type=str, \
             help="Bin sized used to find breakpoints.")   
+    parser.add_option('-f', "--orf-file", dest="orf_file", help="gff formatted file containing orfs")
 
     (options, args) = parser.parse_args()
 
@@ -279,6 +368,7 @@ def ensure_dir(f):
     d = os.path.dirname(f)
     if not os.path.exists(d):
         os.makedirs(d)
+    assert os.path.exists(d)
 
 
 def notify_complete(target_email,t):
@@ -300,11 +390,11 @@ def out_cmd(std_out = "", std_err = "", *objs):
     #line(75)
     if shell_file_fp:
         if std_out != "":
-            std_out_sht = " &1>%s " % (std_out)
+            std_out_sht = " 1>%s " % (std_out)
         else:
             std_out_sht = ""
         if std_err != "":
-            std_err_sht = " &2>%s " % (std_err)
+            std_err_sht = " 2>%s " % (std_err)
         else:
             std_err_sht = ""
         shell_file_fp.write(' '.join(*objs) + std_out_sht + std_err_sht + "\n")
@@ -482,7 +572,7 @@ def find_suspicious_regions(misassemblies, min_cutoff = 2):
     return compressed_suspicious_regions
 
 
-def generate_summary_table(table_filename, all_contig_lengths, filtered_contig_lengths, misassemblies):
+def generate_summary_table(table_filename, all_contig_lengths, filtered_contig_lengths, misassemblies,orf=False):
     """
     Output the misassemblies in a table format:
 
@@ -492,7 +582,11 @@ def generate_summary_table(table_filename, all_contig_lengths, filtered_contig_l
     """
 
     table_file = open(table_filename, 'w')
-    table_file.write("contig_name\tcontig_length\tlow_cov\tlow_cov_bps\thigh_cov\thigh_cov_bps\treapr\treapr_bps\tbreakpoints\tbreakpoints_bps\n")
+
+    if orf:
+        table_file.write("contig_name\tcontig_length\torf_low_cov\torf_low_cov_bps\torf_high_cov\torf_high_cov_bps\torf_reapr\torf_reapr_bps\torf_breakpoints\torf_breakpoints_bps\n")
+    else:
+        table_file.write("contig_name\tcontig_length\tlow_cov\tlow_cov_bps\thigh_cov\thigh_cov_bps\treapr\treapr_bps\tbreakpoints\tbreakpoints_bps\n")
 
     prev_contig = None
     curr_contig = None
@@ -751,6 +845,9 @@ def split_sam_by_bin(sam_output_location, contig_to_bin_map, bin_dir_dict):
             ensure_dir(bin_dir + "sam/")
             output_fp[bin]  = open(bin_dir + "sam/"\
                     + os.path.basename(sam_output_location), 'w')
+        else:
+            error("Bin dir did not exist")
+            error("%s" % (str(bin_dir_dict)))
 
     with open(sam_output_location, 'r') as sam_file:
         for line in sam_file:
@@ -840,8 +937,7 @@ def bin_coverage(options, bin_dir):
         
         #fp_dict[bin].close()
         #fp_dict[bin] = a_new_bin + os.path.basename(options.fasta_file)
-
-    
+    warning("Contig to bin map is: %s" %(str(contig_to_bin_map)))
     while True:
         with open(options.fasta_file,'r') as assembly:
             for contig in contig_reader(assembly):
@@ -852,6 +948,8 @@ def bin_coverage(options, bin_dir):
                         with fp_dict[bin] as bin_file:
                             bin_file.write(contig['name'])
                             bin_file.writelines(contig['sequence'])
+                else:
+                    warning("Throwing away contig: %s due to not being in contig_to_bin_map" % (contig['name'][1:].strip()))
         
         temp_key_list = fp_dict.keys()[:]
         for bin in temp_key_list:
@@ -872,12 +970,10 @@ def bin_coverage(options, bin_dir):
             else:
                 break
 
-
-        
-
     for fp in processed_file_names.values():
         name = fp.name
         if os.stat(name).st_size <= 10:
+            warning("Would have removed tree: %s for file: %s" % (os.path.dirname(name), name))
             shutil.rmtree(os.path.dirname(name))
 
     return contig_to_bin_map,bin_dir_dict
@@ -893,10 +989,10 @@ def contig_reader(fasta_file):
             ret_contig = contig
             contig = {}
             contig['sequence'] = []
-            contig['name'] = line
+            contig['name'] = line.split()[0].strip() + "\n"
             yield ret_contig
         elif line[0] == '>':
-            contig['name'] = line
+            contig['name'] = line.split()[0].strip() + "\n"
             contig['sequence'] = []
             in_contig = True
         else:

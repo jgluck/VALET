@@ -166,7 +166,12 @@ class BreakpointFinder:
                 split_l = line.split()
                 num_matches_in_bin = int(split_l[0])
                 bin_name = split_l[1] + '\t' + split_l[2]
-                avg_coverage_in_bin[bin_name] = self.contig_coverage[split_l[1]]
+                #TODO: Come back here
+                if bin_name in avg_coverage_in_bin:
+                    avg_coverage_in_bin[bin_name] = self.contig_coverage[split_l[1]]
+                else:
+                    warning("Skipping breakpoint bin: %s because not found in avg_coverage dict" % (bin_name))
+                    continue
                 if (2*ave_read_len * num_matches_in_bin) / self.bin_size >= avg_coverage_in_bin[bin_name]/4.0:
                     self.surviving_bins[bin_name] = True
                 else:

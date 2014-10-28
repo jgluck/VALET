@@ -178,21 +178,21 @@ def main():
     orf_filtered_misassemblies = []
     if options.orf_file:
         
-        call_arr = ["sort", "-T ./", "-k1,1 -k4,4n", options.orf_file, "-o", options.output_dir + "/" + options.orf_file + "_sorted"]
+        call_arr = ["sort", "-T ./", "-k1,1",  "-k4,4n", options.orf_file, "-o", options.output_dir + "/" + options.orf_file + "_sorted"]
         out_cmd(FNULL.name, FNULL.name, call_arr)
         call(call_arr)
 
-        call_arr = ["sort", "-T ./", "-k1,1 -k4,4n", summary_file.name, "-o", summary_file.name+"_sorted"]
+        call_arr = ["sort", "-T ./", "-k1,1", "-k4,4n", summary_file.name, "-o", summary_file.name+"_sorted"]
         out_cmd(FNULL.name, FNULL.name, call_arr)
         call(call_arr, stdout = FNULL, stderr = FNULL)
 
         call_arr = ["mv" ,  summary_file.name + "_sorted", summary_file.name]
         out_cmd(FNULL.name, FNULL.name, call_arr)
-        #call(call_arr, stdout = FNULL, stderr = FNULL)
+        call(call_arr, stdout = FNULL, stderr = FNULL)
 
         call_arr = ["mv" , options.output_dir + "/" + options.orf_file+"_sorted", options.orf_file]
         out_cmd(FNULL.name, FNULL.name, call_arr)
-        #call(call_arr, stdout = FNULL, stderr = FNULL)
+        call(call_arr, stdout = FNULL, stderr = FNULL)
 
         #We have been given an orf file, we should filter based on its contents
         orf_summary_file = open(options.output_dir + "/orf_filtered_summary.gff", 'w')
@@ -272,7 +272,7 @@ def main():
         generate_summary_table(options.output_dir + "/orf_summary.tsv", \
                 all_contig_lengths, contig_lengths, orf_filtered_misassemblies,orf=True)
         joined_summary_fp = open(options.output_dir + "/joined_summary.tsv", 'w')
-        call_arr = ["join", options.output_dir + "/summary.tsv", options.output_dir + "/orf_summary.tsv"]
+        call_arr = ["join", "-a1" , "-o", "0", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "2.3","2.4","2.5","2.6","2.7","2.8","2.9","2.10", '-e',  "0", '-1', '1', '-2', '1' , "-t", '	', options.output_dir + "/summary.tsv", options.output_dir + "/orf_summary.tsv"]
         out_cmd(joined_summary_fp.name, FNULL.name, call_arr)
         call(call_arr, stdout = joined_summary_fp, stderr = FNULL)
 
@@ -368,6 +368,7 @@ def ensure_dir(f):
     d = os.path.dirname(f)
     if not os.path.exists(d):
         os.makedirs(d)
+    assert os.path.exists(d)
 
 
 def notify_complete(target_email,t):
@@ -844,6 +845,9 @@ def split_sam_by_bin(sam_output_location, contig_to_bin_map, bin_dir_dict):
             ensure_dir(bin_dir + "sam/")
             output_fp[bin]  = open(bin_dir + "sam/"\
                     + os.path.basename(sam_output_location), 'w')
+        else:
+            error("Bin dir did not exist")
+            error("%s" % (str(bin_dir_dict)))
 
     with open(sam_output_location, 'r') as sam_file:
         for line in sam_file:
@@ -933,8 +937,7 @@ def bin_coverage(options, bin_dir):
         
         #fp_dict[bin].close()
         #fp_dict[bin] = a_new_bin + os.path.basename(options.fasta_file)
-
-    
+    warning("Contig to bin map is: %s" %(str(contig_to_bin_map)))
     while True:
         with open(options.fasta_file,'r') as assembly:
             for contig in contig_reader(assembly):
@@ -945,6 +948,8 @@ def bin_coverage(options, bin_dir):
                         with fp_dict[bin] as bin_file:
                             bin_file.write(contig['name'])
                             bin_file.writelines(contig['sequence'])
+                else:
+                    warning("Throwing away contig: %s due to not being in contig_to_bin_map" % (contig['name'][1:].strip()))
         
         temp_key_list = fp_dict.keys()[:]
         for bin in temp_key_list:
@@ -965,12 +970,10 @@ def bin_coverage(options, bin_dir):
             else:
                 break
 
-
-        
-
     for fp in processed_file_names.values():
         name = fp.name
         if os.stat(name).st_size <= 10:
+            warning("Would have removed tree: %s for file: %s" % (os.path.dirname(name), name))
             shutil.rmtree(os.path.dirname(name))
 
     return contig_to_bin_map,bin_dir_dict
@@ -986,10 +989,10 @@ def contig_reader(fasta_file):
             ret_contig = contig
             contig = {}
             contig['sequence'] = []
-            contig['name'] = line
+            contig['name'] = line.split()[0].strip() + "\n"
             yield ret_contig
         elif line[0] == '>':
-            contig['name'] = line
+            contig['name'] = line.split()[0].strip() + "\n"
             contig['sequence'] = []
             in_contig = True
         else:

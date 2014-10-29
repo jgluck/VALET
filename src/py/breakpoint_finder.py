@@ -167,7 +167,8 @@ class BreakpointFinder:
                 num_matches_in_bin = int(split_l[0])
                 bin_name = split_l[1] + '\t' + split_l[2]
                 #TODO: Come back here
-                if bin_name in avg_coverage_in_bin:
+                #if bin_name in avg_coverage_in_bin:
+                if split_l[1] in self.contig_coverage:
                     avg_coverage_in_bin[bin_name] = self.contig_coverage[split_l[1]]
                 else:
                     warning("Skipping breakpoint bin: %s because not found in avg_coverage dict" % (bin_name))

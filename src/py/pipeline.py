@@ -879,7 +879,7 @@ def increment_coverage_window(options, low, high):
     high = int(high + high * options.coverage_multiplier)
     if high == prev_high:
         high = high + 1
-
+    warning("Incremented coverage window to: %d -~-  %d" % (low, high))
     return low, high
 
 
@@ -894,6 +894,9 @@ def bin_coverage(options, bin_dir):
             if float(split_line[1]) >= options.min_coverage:
                 # Only store contigs who are above minimum avg coverage.
                 contig_to_coverage_map[split_line[0]] = float(split_line[1])
+            else:
+                warning("Not binning contig: %s due to lower than minimum coverage %f"\
+                        % (split_line[0], options.min_coverage))
 
     max_cvg = max(contig_to_coverage_map.values())
 
@@ -904,7 +907,7 @@ def bin_coverage(options, bin_dir):
 
     curr_bin = 0
     bins = []
-    while len(contig_to_bin_map.keys()) < len(contig_to_coverage_map.keys()):
+    while len(contig_to_bin_map) < len(contig_to_coverage_map):
         slice_dict = {k: v for k,v in contig_to_coverage_map.iteritems() if low<=v and high>v}
         for contig in slice_dict.keys():
             contig_to_bin_map[contig] = curr_bin
